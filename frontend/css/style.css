@@ -1,0 +1,132 @@
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background-color: #f1f5f9;
+}
+
+.container {
+    display: flex;
+}
+
+.sidebar {
+    width: 220px;
+    background-color: #1e293b;
+    color: white;
+    height: 100vh;
+    padding: 20px;
+}
+
+.sidebar h2 {
+    margin-bottom: 30px;
+}
+
+.sidebar ul {
+    list-style: none;
+    padding: 0;
+}
+
+.sidebar li {
+    padding: 10px 0;
+    cursor: pointer;
+}
+
+.sidebar li:hover {
+    color: #38bdf8;
+}
+
+.main-content {
+    flex: 1;
+    padding: 30px;
+}
+
+header {
+    margin-bottom: 30px;
+}
+
+.cards {
+    display: flex;
+    gap: 20px;
+}
+
+.card {
+    background: white;
+    padding: 20px;
+    width: 200px;
+    border-radius: 10px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+    text-align: center;
+}
+
+.card h2 {
+    font-size: 36px;
+    margin: 0;
+    color: #2563eb;
+}
+
+.report-section {
+    margin-top: 40px;
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+}
+
+.report-form {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+}
+
+.report-form button {
+    background-color: #2563eb;
+    color: white;
+    border: none;
+    padding: 8px 15px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.table-section {
+    margin-top: 40px;
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+th, td {
+    padding: 10px;
+    border-bottom: 1px solid #e2e8f0;
+    text-align: left;
+}
+
+th {
+    background-color: #f1f5f9;
+}
+
+tr:hover {
+    background-color: #f8fafc;
+}
+
+.sidebar a {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+    padding: 5px 0;
+}
+
+.sidebar a:hover {
+    background-color: #e5e7eb;
+    border-radius: 5px;
+}
+
+.table-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}

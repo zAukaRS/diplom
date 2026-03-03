@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Административная система общежитий</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="container">
+
+    <aside class="sidebar">
+        <h2>Админ-панель</h2>
+        <ul>
+            <li>🏠 Главная</li>
+            <li>📊 Отчёты</li>
+            <li>🛏 Комнаты</li>
+            <li>🏢 Общежития</li>
+            <li><a href="/logout">🚪 Выход</a></li>
+        </ul>
+    </aside>
+    <div class="main-content">
+        <header>
+            <h1>Система управления общежитиями</h1>
+        </header>
+        <section class="cards">
+
+            <div class="card">
+                <h2>72%</h2>
+                <p>Средняя загрузка</p>
+            </div>
+
+            <div class="card">
+                <h2>87</h2>
+                <p>Текущих проживающих</p>
+            </div>
+
+            <div class="card">
+                <h2>33</h2>
+                <p>Свободных мест</p>
+            </div>
+
+            <div class="card">
+                <h2>12</h2>
+                <p>Выселений за месяц</p>
+            </div>
+        </section>
+
+        <section class="report-section">
+            <h2>Сформировать отчёт</h2>
+            <div class="report-form">
+                <label>С:</label>
+                <input type="date">
+                <label>По:</label>
+                <input type="date">
+                <button>Сформировать</button>
+            </div>
+        </section>
+
+        <section class="table-section">
+            <div class="table-header">
+                <h2>Отчёт по проживающим</h2>
+                <button id="addResidentBtn">Добавить запись</button>
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <input type="file" id="excelFile" accept=".xlsx,.xls">
+                    <button type="submit">Загрузить Excel</button>
+                </form>
+            </div>
+             <div id="addResidentForm" style="display:none; margin:15px 0;">
+                <input type="text" id="fieldInput" placeholder="Месторождение">
+                <input type="text" id="customerInput" placeholder="Заказчик">
+                <input type="text" id="fullNameInput" placeholder="ФИО">
+                <input type="date" id="checkInInput">
+                <input type="date" id="checkOutInput">
+
+
+                <button id="saveResidentBtn">Сохранить</button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Месторождение</th>
+                        <th>Заказчик</th>
+                        <th>ФИО</th>
+                        <th>Дата заезда</th>
+                        <th>Дата выезда</th>
+                        <th>Кол-во дней</th>
+                    </tr>
+                </thead>
+                <tbody id="residents-table">
+                </tbody>
+            </table>
+        </section>
+
+    </div>
+
+</div>
+<script src="js/app.js"></script>
+</body>
+</html>
