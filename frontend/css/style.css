@@ -93,9 +93,20 @@ header {
 }
 
 table {
-    width: 100%;
     border-collapse: collapse;
-    margin-top: 20px;
+    width: 100%;
+    font-size: 0.85rem;
+}
+
+table th, table td {
+    padding: 4px 6px;
+    text-align: center;
+    border: 1px solid #ddd;
+}
+
+table th {
+    background-color: #f0f0f0;
+    font-weight: 600;
 }
 
 th, td {
@@ -129,4 +140,81 @@ tr:hover {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 15px;
+}
+
+.day-select:focus,
+.day-select:hover {
+    outline: 2px solid #6a5acd; /* фиолетовая рамка */
+    background-color: #f0f0ff;
+}
+
+.day-select.drag-highlight {
+    background-color: #cce5ff; /* светло-синий фон для подсветки */
+}
+.day-select {
+    padding: 2px 4px; /* чтобы select был компактнее */
+    font-size: 12px;
+    min-width: 70px;
+}
+
+.day-select.dragging {
+    background-color: #e0f7fa;
+}
+
+/* Компактные фильтры и формы */
+.filters.compact, .add-resident.compact {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.filter-select, .add-resident.compact input, .add-resident.compact select {
+    padding: 4px 8px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    font-size: 0.9rem;
+    min-width: 100px;
+    transition: all 0.2s ease;
+}
+
+.filter-select:focus, .add-resident.compact input:focus, .add-resident.compact select:focus {
+    outline: none;
+    border-color: #8a2be2;
+    box-shadow: 0 0 5px rgba(138, 43, 226, 0.5);
+}
+
+.btn-compact {
+    padding: 4px 10px;
+    border-radius: 8px;
+    border: none;
+    background-color: #8a2be2;
+    color: white;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-compact:hover {
+    background-color: #6f1fb0;
+}
+
+td select.day-select {
+    padding: 1px 4px;       /* минимальные отступы */
+    font-size: 0.65rem;     /* маленький шрифт */
+    border-radius: 4px;     /* чуть меньше скругление */
+    border: 1px solid #ccc;
+    background-color: #f9f9f9;
+    min-width: 50px;        /* меньше ширина */
+    width: 85px;
+    height: 20px;           /* фиксированная высота */
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+td select.day-select:focus {
+    outline: none;
+    border-color: #8a2be2;
+    box-shadow: 0 0 3px rgba(138, 43, 226, 0.5);
 }
