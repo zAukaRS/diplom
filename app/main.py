@@ -16,8 +16,7 @@ from datetime import date
 from fastapi import Body
 from datetime import timedelta
 
-
-
+# uvicorn app.main:app --reload
 Base.metadata.create_all(bind=engine)
 app = FastAPI()
 
