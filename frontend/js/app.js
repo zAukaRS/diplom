@@ -48,22 +48,20 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
-    // *** ВАЖНО: Добавьте обработчик reportBtn ЗДЕСЬ, внутри DOMContentLoaded ***
-    const reportBtn = document.getElementById("reportBtn");
-    if (reportBtn) {
-        reportBtn.addEventListener("click", function () {
-            const month = document.getElementById("reportMonth").value;
-            if (!month) {
-                alert("Выберите месяц");
-                return;
-            }
-            window.open(`/api/get_report?month=${month}`, "_blank");
-        });
-        console.log("Обработчик reportBtn добавлен"); // Для отладки
-    } else {
-        console.error("Элемент reportBtn не найден на странице");
-    }
+    
+    
 });
+function downloadReport() {
+    const dateFrom = document.getElementById("dateFrom").value;
+    const dateTo = document.getElementById("dateTo").value;
+
+    if (!dateFrom || !dateTo) {
+        alert("Выберите обе даты!");
+        return;
+    }
+
+    window.open(`/api/get_report?date_from=${dateFrom}&date_to=${dateTo}`, "_blank");
+    }
 let dragStart = null; // {residentId, day, value}
 let dragMode = null;
 

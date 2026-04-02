@@ -49,22 +49,11 @@
         <section class="report-section">
             <h2>Сформировать отчёт</h2>
             <div class="report-form">
-                <label>Месяц:</label>
-                <select id="reportMonth">
-                    <option value="1">Январь</option>
-                    <option value="2">Февраль</option>
-                    <option value="3">Март</option>
-                    <option value="4">Апрель</option>
-                    <option value="5">Май</option>
-                    <option value="6">Июнь</option>
-                    <option value="7">Июль</option>
-                    <option value="8">Август</option>
-                    <option value="9">Сентябрь</option>
-                    <option value="10">Октябрь</option>
-                    <option value="11">Ноябрь</option>
-                    <option value="12">Декабрь</option>
-                </select>
-                <button id="reportBtn">Сформировать</button>
+                <label>С:</label>
+                <input type="date" id="dateFrom">
+                <label>По:</label>
+                <input type="date" id="dateTo">
+                <button onclick="downloadReport()">Сформировать</button>
             </div>
         </section>
 
