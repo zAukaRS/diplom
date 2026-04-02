@@ -1,9 +1,6 @@
 
 document.addEventListener("DOMContentLoaded", function () {
-
-
-
-    loadFields()
+    loadFields();
 
     // Показать / скрыть форму
     document.getElementById("addResidentBtn").addEventListener("click", function () {
@@ -13,7 +10,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Сохранение записи
     document.getElementById("saveResidentBtn").addEventListener("click", async function () {
-
         const checkIn = document.getElementById("checkInInput").value;
         const checkOut = document.getElementById("checkOutInput").value;
 
@@ -47,14 +43,26 @@ document.addEventListener("DOMContentLoaded", function () {
             } else {
                 alert("Ошибка сервера: " + text);
             }
-
-
         } catch (error) {
             alert("Ошибка: " + error.message);
         }
-
     });
 
+    // *** ВАЖНО: Добавьте обработчик reportBtn ЗДЕСЬ, внутри DOMContentLoaded ***
+    const reportBtn = document.getElementById("reportBtn");
+    if (reportBtn) {
+        reportBtn.addEventListener("click", function () {
+            const month = document.getElementById("reportMonth").value;
+            if (!month) {
+                alert("Выберите месяц");
+                return;
+            }
+            window.open(`/api/get_report?month=${month}`, "_blank");
+        });
+        console.log("Обработчик reportBtn добавлен"); // Для отладки
+    } else {
+        console.error("Элемент reportBtn не найден на странице");
+    }
 });
 let dragStart = null; // {residentId, day, value}
 let dragMode = null;
@@ -399,6 +407,7 @@ function initDragFill() {
         dragMode = null;
     });
 }
+
 /*document.getElementById("uploadForm").addEventListener("submit", async function(e) {
     e.preventDefault();
 

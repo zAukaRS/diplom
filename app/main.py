@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from .database import Base, engine
@@ -15,8 +15,14 @@ from datetime import datetime
 from datetime import date
 from fastapi import Body
 from datetime import timedelta
+import calendar
+import os
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
 
 # uvicorn app.main:app --reload
+
 Base.metadata.create_all(bind=engine)
 app = FastAPI()
 
@@ -71,7 +77,7 @@ def get_residents(db: Session = Depends(get_db)):
         customer = r.customer
 
         days_info = {}
-        for rd in r.days:
+        for rd in r.resident_days:
             day = rd.date.day
             days_info[day] = rd.workplace_id
 
@@ -257,4 +263,97 @@ def update_day(data: dict = Body(...), db: Session = Depends(get_db)):
         return JSONResponse({"status": "error", "detail": str(e)})
 
 
+def create_report(file):
 
+    wb = load_workbook(file)
+    ws = wb.active
+
+    # Заголовки
+    headers = ['Месторождение', 'Заказчик', 'ФИО проживающего',
+               'Дата заезда', 'Дата выезда', 'Количество дней']
+
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    for col, value in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=col)
+        cell.value = value
+        cell.font = Font(bold=True, name="Times New Roman", size=11)
+        cell.fill = PatternFill("solid", fgColor="CCCCCC")
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+        cell.border = border
+
+    # Данные
+    for row in ws.iter_rows(min_row=2):
+        for i, cell in enumerate(row, start=1):
+            cell.font = Font(name="Times New Roman", size=11)
+            cell.alignment = Alignment(horizontal='left', vertical='center')
+            cell.border = border
+
+            # 👉 окрашиваем только D, E, F
+            if i in (4, 5, 6):
+                cell.fill = PatternFill(start_color="FF64DE78", end_color="FF64DE78", fill_type="solid")
+
+    for col in ws.columns:
+        max_length = 0
+        column = col[0].column_letter
+
+        for cell in col:
+            if cell.value:
+                max_length = max(max_length, len(str(cell.value)))
+
+        ws.column_dimensions[column].width = max_length + 2
+    
+    
+    new_file = file.replace(".xlsx", "_final.xlsx")
+    wb.save(new_file)
+    return new_file
+
+
+
+
+@app.get('/api/get_report')
+def get_report(month: int, db: Session = Depends(get_db)):
+    today = datetime.today()
+    year = today.year
+
+    date_from = date(year, month, 1)
+    last_day = calendar.monthrange(year, month)[1]
+    date_to = date(year, month, last_day)
+
+    print(f"Ищем за период: {date_from} — {date_to}")  # ← добавь
+
+    residents = db.query(models.Resident).join(models.Field).join(models.Customer)\
+        .filter(
+            models.Resident.check_in >= date_from,
+            models.Resident.check_out <= date_to
+        ).order_by(
+            models.Field.name,
+            models.Customer.name,
+        ).all()
+
+    print(f"Найдено жильцов: {len(residents)}")  # ← добавь
+
+    if not residents:
+        return JSONResponse({"error": "Нет данных за выбранный месяц"}, status_code=404)
+    f = [{
+        'Месторождение': r.field.name,
+        'Заказчик': r.customer.name,
+        'ФИО проживающего': r.full_name,
+        'Дата заезда': r.check_in,
+        'Дата выезда': r.check_out,
+        'Количество дней': len(r.resident_days)
+    } for r in residents]
+
+    df = pd.DataFrame(f)
+
+    file_path = f"report_{month}.xlsx"
+    df.to_excel(file_path, index=False)
+
+    final_file = create_report(file_path)
+
+    return FileResponse(final_file, filename=final_file)
