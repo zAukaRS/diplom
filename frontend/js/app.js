@@ -38,25 +38,45 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
 
         const days = daysInMonth(month, year);
-
+        const head = document.getElementById("calendarHead");
+        if (!head.innerHTML.trim()) {
+            generateCalendar(days);
+        }
         const row = document.createElement("tr");
         row.id = "new-resident-row";
 
-        [
-            { key: "room_location", ph: "Расположение (Общежитие/Вагон)" },
-            { key: "room_path", ph: "Путь" },
-            { key: "room_number", ph: "№ комнаты" },
-            { key: "room_capacity", ph: "К-во мест" }
-        ].forEach(item => {
-            const td = document.createElement("td");
+    [
+        { key: "room_location", ph: "Расположение (Общежитие/Вагон)" },
+        { key: "room_path", ph: "Путь" },
+        { key: "room_number", ph: "№ комнаты" },
+        { key: "room_capacity", ph: "К-во мест" }
+    ].forEach(item => {
+        const td = document.createElement("td");
+
+        if (item.key === "room_location") {
+            // Выпадающий список для Расположения
+            const select = document.createElement("select");
+            select.className = "edit-select";
+            select.dataset.field = "room_location";
+            select.style.width = "100%";
+            select.innerHTML = `
+                <option value="">—</option>
+                <option value="Общежитие">Общежитие</option>
+                <option value="Вагон">Вагон</option>
+            `;
+            td.appendChild(select);
+        } else {
             const input = document.createElement("input");
             input.type = "text";
             input.className = "edit-input";
             input.dataset.field = item.key;
             input.placeholder = item.ph;
+            input.style.width = "100%";
             td.appendChild(input);
-            row.appendChild(td);
-        });
+        }
+
+        row.appendChild(td);
+    });
 
         // 2) Пол
         const tdGender = document.createElement("td");
