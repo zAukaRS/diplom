@@ -226,7 +226,6 @@ def update_day(data: dict = Body(...), db: Session = Depends(get_db)):
         month = int(data["month"])
         year = int(data["year"])
 
-        # Обработка workplace_id безопасно
         workplace_id = data.get("workplace_id")
         try:
             workplace_id = int(workplace_id)
@@ -240,18 +239,25 @@ def update_day(data: dict = Body(...), db: Session = Depends(get_db)):
             models.ResidentDay.date == target_date
         ).first()
 
-        if not rd:
-            rd = models.ResidentDay(
-                resident_id=resident_id,
-                date=target_date,
-                workplace_id=workplace_id
-            )
-            db.add(rd)
+        if workplace_id is None:
+            # Удаляем запись, если пусто
+            if rd:
+                db.delete(rd)
+                db.commit()
+            return JSONResponse({"status": "deleted"})
         else:
-            rd.workplace_id = workplace_id
-
-        db.commit()
-        return JSONResponse({"status": "ok"})
+            # Создаём или обновляем
+            if not rd:
+                rd = models.ResidentDay(
+                    resident_id=resident_id,
+                    date=target_date,
+                    workplace_id=workplace_id
+                )
+                db.add(rd)
+            else:
+                rd.workplace_id = workplace_id
+            db.commit()
+            return JSONResponse({"status": "saved"})
 
     except Exception as e:
         db.rollback()

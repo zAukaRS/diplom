@@ -43,7 +43,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (response.ok) {
                 alert("Запись добавлена!");
-                loadResidents();
+                loadCalendar();
             } else {
                 alert("Ошибка сервера: " + text);
             }
@@ -214,10 +214,10 @@ async function loadCalendar() {
     row += `</tr>`;
 
     tbody.innerHTML += row;
-    initDragFill();
+
 });
 }
-
+initDragFill();
 const addResidentBtn = document.getElementById("addResidentBtn");
 const addResidentForm = document.getElementById("addResidentForm");
 
@@ -261,7 +261,7 @@ saveResidentBtn.addEventListener("click", async () => {
         if (response.ok) {
             alert(result.message);
             addResidentForm.style.display = "none";
-            loadResidents(); // обновляем таблицу после добавления
+            loadCalendar(); // <-- теперь таблица полностью обновится
         } else {
             alert(result.error || "Ошибка добавления");
         }
@@ -273,42 +273,38 @@ saveResidentBtn.addEventListener("click", async () => {
 
 
 
+
 document.addEventListener("change", async (e) => {
-    if (e.target.classList.contains("day-select")) {
-        const residentId = e.target.dataset.resident;
-        if (!residentId) return alert("Не удалось определить жильца");
-        const day = e.target.dataset.day;
-        const month = document.getElementById("monthFilter").value;
-        const year = document.getElementById("yearFilter").value;
+    if (!e.target.classList.contains("day-select")) return;
 
-        let workplaceId = e.target.value;
-        if (!workplaceId) {
-            workplaceId = null;  // <- сюда пустое значение
+    const selectEl = e.target;
+    const residentId = parseInt(selectEl.dataset.resident);
+    const day = parseInt(selectEl.dataset.day);
+    const month = parseInt(document.getElementById("monthFilter").value);
+    const year = parseInt(document.getElementById("yearFilter").value);
+
+    let workplaceId = selectEl.value ? parseInt(selectEl.value) : null;
+
+    try {
+        const res = await fetch("/api/update_day", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                resident_id: residentId,
+                day,
+                month,
+                year,
+                workplace_id: workplaceId
+            })
+        });
+
+        if (!res.ok) {
+            console.error("Ошибка сервера при сохранении дня");
         } else {
-            workplaceId = parseInt(workplaceId);
+            console.log(`День сохранен: резидент ${residentId}, день ${day}, рабочее место ${workplaceId}`);
         }
-
-        console.log({residentId, day, month, year, workplaceId}); // <- проверь что отправляется
-
-        try {
-            const response = await fetch("/api/update_day", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    resident_id: residentId,
-                    day: day,
-                    month: month,
-                    year: year,
-                    workplace_id: workplaceId
-                })
-            });
-
-            const result = await response.json();
-            console.log("Сохранено:", result);
-
-        } catch (err) {
-            alert("Ошибка: " + err.message);
-        }
+    } catch (err) {
+        console.error("Ошибка при сохранении дня:", err);
     }
 });
 
@@ -318,9 +314,15 @@ document.addEventListener("change", async (e) => {
 async function saveDay(selectEl) {
     const residentId = selectEl.dataset.resident;
     const day = selectEl.dataset.day;
-    const month = document.getElementById("monthFilter").value;
-    const year = document.getElementById("yearFilter").value;
-    const workplaceId = selectEl.value || null;
+    const month = parseInt(document.getElementById("monthFilter").value);
+    const year = parseInt(document.getElementById("yearFilter").value);
+
+    let workplaceId = selectEl.value;
+    if (!workplaceId || workplaceId === "") {
+        workplaceId = null;  // пустое значение для удаления
+    } else {
+        workplaceId = parseInt(workplaceId);
+    }
 
     try {
         await fetch("/api/update_day", {
@@ -332,6 +334,7 @@ async function saveDay(selectEl) {
         console.error("Ошибка при сохранении дня:", err);
     }
 }
+
 
 function initDragFill() {
     const tbody = document.getElementById("calendarBody");
