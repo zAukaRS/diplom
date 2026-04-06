@@ -331,14 +331,14 @@ def create_report(dict_list: list, output_filename: str, sheet_name='расч.л
 
 
 @app.get('/api/get_report')
-def get_report(date_from : date, date_to : date, db: Session = Depends(get_db)):
+def get_report(date_in : date, date_out : date, db: Session = Depends(get_db)):
     
     # print(f"Ищем за период: {date_from} — {date_to}") 
 
     residents = db.query(models.Resident).join(models.Field).join(models.Customer)\
         .filter(and_(
-                models.Resident.check_in <= date_to,
-                models.Resident.check_out >= date_from )
+                models.Resident.check_in <= date_out,
+                models.Resident.check_out >= date_in)
         ).order_by(
             models.Field.name,
             models.Customer.name,
@@ -353,10 +353,10 @@ def get_report(date_from : date, date_to : date, db: Session = Depends(get_db)):
         'Заказчик': r.customer.name,
         'ФИО проживающего': r.full_name,
         'Дата заезда': r.check_in,
-        'Дата выезда': r.check_out if r.check_out <= date_to else None,
-        'Количество дней': len(r.resident_days) if r.check_out <= date_to else (date_to-r.check_in).days + 1
+        'Дата выезда': r.check_out if r.check_out <= date_out else None,
+        'Количество дней': len(r.resident_days) if r.check_out <= date_out else (date_out -r.check_in).days + 1
     } for r in residents]
 
     
-    file_path = create_report(f, f"report_sine{date_from.month}.xlsx")
+    file_path = create_report(f, f"report_sine{date_in.month}.xlsx")
     return FileResponse(file_path, filename=file_path)
