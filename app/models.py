@@ -55,7 +55,7 @@ class Resident(Base):
     check_out = Column(Date)
 
     full_name = Column(String)
-    days = relationship("ResidentDay", back_populates="resident")
+    # days = relationship("ResidentDay", back_populates="resident")
     position = Column(String)
     gender = Column(String, nullable=True)
     field = relationship("Field", back_populates="residents")
@@ -79,7 +79,7 @@ class ResidentDay(Base):
     workplace_id = Column(Integer, ForeignKey("workplaces.id"), nullable=True)
     workplace = relationship("Workplace", back_populates="resident_days")
 
-    resident = relationship("Resident", back_populates="days")
+    resident = relationship("Resident", back_populates="resident_days")
     room = relationship("Room", back_populates="resident_days")
 
 
@@ -105,7 +105,7 @@ class Location(Base):
     __tablename__ = "locations"
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
-
+    
     rooms = relationship("Room", back_populates="location")
 
 

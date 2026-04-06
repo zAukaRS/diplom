@@ -1,9 +1,6 @@
 
 document.addEventListener("DOMContentLoaded", function () {
-
-
-
-    loadFields()
+    loadFields();
 
     // Показать / скрыть форму
     document.getElementById("addResidentBtn").addEventListener("click", function () {
@@ -13,7 +10,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Сохранение записи
     document.getElementById("saveResidentBtn").addEventListener("click", async function () {
-
         const checkIn = document.getElementById("checkInInput").value;
         const checkOut = document.getElementById("checkOutInput").value;
 
@@ -47,15 +43,25 @@ document.addEventListener("DOMContentLoaded", function () {
             } else {
                 alert("Ошибка сервера: " + text);
             }
-
-
         } catch (error) {
             alert("Ошибка: " + error.message);
         }
-
     });
 
+    
+    
 });
+function downloadReport() {
+    const dateFrom = document.getElementById("dateFrom").value;
+    const dateTo = document.getElementById("dateTo").value;
+
+    if (!dateFrom || !dateTo) {
+        alert("Выберите обе даты!");
+        return;
+    }
+
+    window.open(`/api/get_report?date_from=${dateFrom}&date_to=${dateTo}`, "_blank");
+    }
 let dragStart = null; // {residentId, day, value}
 let dragMode = null;
 
@@ -402,6 +408,7 @@ function initDragFill() {
         dragMode = null;
     });
 }
+
 /*document.getElementById("uploadForm").addEventListener("submit", async function(e) {
     e.preventDefault();
 

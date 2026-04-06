@@ -1,22 +1,25 @@
 from fastapi import FastAPI, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from .database import Base, engine
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text,or_,and_
 from .database import SessionLocal
 from fastapi.responses import JSONResponse
 from fastapi import File, UploadFile, Depends
 import pandas as pd
 from .database import get_db
 from . import models
-from datetime import datetime
-from datetime import date
+from datetime import datetime,timedelta, date
 from fastapi import Body
-from datetime import timedelta
+import os
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 
+# uvicorn app.main:app --reload
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI()
@@ -72,7 +75,7 @@ def get_residents(db: Session = Depends(get_db)):
         customer = r.customer
 
         days_info = {}
-        for rd in r.days:
+        for rd in r.resident_days:
             day = rd.date.day
             days_info[day] = rd.workplace_id
 
@@ -262,6 +265,98 @@ def update_day(data: dict = Body(...), db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         return JSONResponse({"status": "error", "detail": str(e)})
+    
 
 
 
+def create_report(dict_list: list, output_filename: str, sheet_name='расч.л'):
+
+    if not os.path.exists('excel_files'):
+        os.makedirs('excel_files')
+
+    filepath = os.path.join('excel_files', output_filename)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = sheet_name
+
+    headers = ['Месторождение', 'Заказчик', 'ФИО проживающего',
+               'Дата заезда', 'Дата выезда', 'Количество дней']
+
+    # добавляем данные
+    ws.append(headers)
+
+    for row in dict_list:
+        ws.append([
+            row['Месторождение'],
+            row['Заказчик'],
+            row['ФИО проживающего'],
+            row['Дата заезда'].strftime("%d.%m.%Y"),
+            row['Дата выезда'].strftime("%d.%m.%Y") if row['Дата выезда'] else "—",
+            row['Количество дней']
+        ])
+
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+
+    # Заголовки
+    for cell in ws[1]:
+        cell.font = Font(bold=True, name="Times New Roman", size=11)
+        cell.fill = PatternFill("solid", fgColor="CCCCCC")
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+        cell.border = border
+
+    # Данные
+    for row in ws.iter_rows(min_row=2):
+        for i, cell in enumerate(row, start=1):
+            cell.font = Font(name="Times New Roman", size=11)
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+            cell.border = border
+
+            if i in (4, 5, 6):
+                cell.fill = PatternFill(start_color="86D472", end_color="86D472", fill_type="solid")
+
+    widths = [25, 25, 30, 15, 15, 20]
+
+    for i, width in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = width
+
+    wb.save(filepath)
+    return filepath
+
+
+
+@app.get('/api/get_report')
+def get_report(date_from : date, date_to : date, db: Session = Depends(get_db)):
+    
+    # print(f"Ищем за период: {date_from} — {date_to}") 
+
+    residents = db.query(models.Resident).join(models.Field).join(models.Customer)\
+        .filter(and_(
+                models.Resident.check_in <= date_to,
+                models.Resident.check_out >= date_from )
+        ).order_by(
+            models.Field.name,
+            models.Customer.name,
+        ).all()
+
+    # print(f"Найдено жильцов: {len(residents)}")  
+
+    if not residents:
+        return JSONResponse({"error": "Нет данных за выбранный месяц"}, status_code=404)
+    f = [{
+        'Месторождение': r.field.name,
+        'Заказчик': r.customer.name,
+        'ФИО проживающего': r.full_name,
+        'Дата заезда': r.check_in,
+        'Дата выезда': r.check_out if r.check_out <= date_to else None,
+        'Количество дней': len(r.resident_days) if r.check_out <= date_to else (date_to-r.check_in).days + 1
+    } for r in residents]
+
+    
+    file_path = create_report(f, f"report_sine{date_from.month}.xlsx")
+    return FileResponse(file_path, filename=file_path)

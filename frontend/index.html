@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <title>Административная система общежитий</title>
     <link rel="stylesheet" href="css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-
 </head>
 <body>
 
@@ -50,14 +48,12 @@
 
         <section class="report-section">
             <h2>Сформировать отчёт</h2>
-
             <div class="report-form">
                 <label>С:</label>
                 <input type="date">
                 <label>По:</label>
                 <input type="date">
                 <button>Сформировать</button>
-                <button id="downloadReportBtn">Скачать отчет Excel</button>
             </div>
         </section>
 
@@ -94,6 +90,7 @@
             </div>
             <div class="table-header">
                 <h2>Отчёт по проживающим</h2>
+                <button id="addResidentBtn">Добавить запись</button>
                 <form id="uploadForm" enctype="multipart/form-data">
                     <input type="file" id="excelFile" accept=".xlsx,.xls">
                     <button type="submit">Загрузить Excel</button>
@@ -118,6 +115,5 @@
 
 </div>
 <script src="js/app.js"></script>
-<script src="js/report.js"></script>
 </body>
 </html>
