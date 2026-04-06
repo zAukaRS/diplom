@@ -7,7 +7,11 @@ body {
 .container {
     display: flex;
 }
-
+#calendarBody .edit-input,
+#calendarBody .edit-select {
+    width: 100%;
+    box-sizing: border-box;
+}
 .sidebar {
     width: 220px;
     background-color: #1e293b;

@@ -58,9 +58,10 @@ class Resident(Base):
     # days = relationship("ResidentDay", back_populates="resident")
     position = Column(String)
     gender = Column(String, nullable=True)
+    shift = Column(String, nullable=True) 
     field = relationship("Field", back_populates="residents")
     customer = relationship("Customer", back_populates="residents")
-
+    
     resident_days = relationship(
         "ResidentDay",
         back_populates="resident",
@@ -97,7 +98,7 @@ class Room(Base):
     # связь с Resident через ResidentDay
     resident_days = relationship("ResidentDay", back_populates="room")
     field_id = Column(Integer, ForeignKey("fields.id"))  # связь с Field
-
+    
     field = relationship("Field", back_populates="rooms")
 
 

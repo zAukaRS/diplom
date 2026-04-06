@@ -1,31 +1,157 @@
+let editMode = false;
+let dragStart = null;
+let dragMode = null;
+let workplaces = [];
 
-document.addEventListener("DOMContentLoaded", function () {
-    loadFields();
+const GENDER_OPTIONS = ["", "М", "Ж"];
+const SHIFT_OPTIONS = ["", "дневная", "ночная"];
+const POSITION_OPTIONS = ["", "Пекарь", "Повар", "Слесарь-ремонтник", "Инженер", "Техник", "Механик", "Электрик", "Оператор", "Мастер", "Рабочий"];
+let customers = [];
+async function loadCustomers() {
+    const res = await fetch("/api/customers");
+    customers = await res.json();
+}
+document.addEventListener("DOMContentLoaded", async function () {
+    await loadFields();
+    await loadWorkplaces();
+    await loadCustomers();
 
-    // Показать / скрыть форму
-    document.getElementById("addResidentBtn").addEventListener("click", function () {
-        const form = document.getElementById("addResidentForm");
-        form.style.display = form.style.display === "none" ? "block" : "none";
-    });
+    const addBtn = document.getElementById("addResidentBtn");
+    if (addBtn) {
+        addBtn.addEventListener("click", function () {
+            addNewRow();
+        });
+    }
 
-    // Сохранение записи
-    document.getElementById("saveResidentBtn").addEventListener("click", async function () {
-        const checkIn = document.getElementById("checkInInput").value;
-        const checkOut = document.getElementById("checkOutInput").value;
+    function addNewRow() {
+        const tbody = document.getElementById("calendarBody");
 
-        const data = {
-            field: document.getElementById("fieldInput").value,
-            customer: document.getElementById("customerInput").value,
-            full_name: document.getElementById("fullNameInput").value,
-            check_in: checkIn,
-            check_out: checkOut,
-            days: calculateDays(checkIn, checkOut)
-        };
+        const oldNewRow = document.getElementById("new-resident-row");
+        if (oldNewRow) oldNewRow.remove();
 
-        if (!data.field || !data.customer || !data.full_name) {
-            alert("Заполните обязательные поля!");
+        const month = parseInt(document.getElementById("monthFilter").value, 10);
+        const year = parseInt(document.getElementById("yearFilter").value, 10);
+
+        if (!month || !year) {
+            alert("Сначала выберите месяц и год, затем нажмите Показать");
             return;
         }
+
+        const days = daysInMonth(month, year);
+
+        const row = document.createElement("tr");
+        row.id = "new-resident-row";
+
+        [
+            { key: "room_location", ph: "Расположение (Общежитие/Вагон)" },
+            { key: "room_path", ph: "Путь" },
+            { key: "room_number", ph: "№ комнаты" },
+            { key: "room_capacity", ph: "К-во мест" }
+        ].forEach(item => {
+            const td = document.createElement("td");
+            const input = document.createElement("input");
+            input.type = "text";
+            input.className = "edit-input";
+            input.dataset.field = item.key;
+            input.placeholder = item.ph;
+            td.appendChild(input);
+            row.appendChild(td);
+        });
+
+        // 2) Пол
+        const tdGender = document.createElement("td");
+        tdGender.appendChild(makeEditSelectNew(GENDER_OPTIONS, "gender"));
+        row.appendChild(tdGender);
+
+        // 3) ФИО + кнопка Сохранить (без лишней колонки)
+        const tdName = document.createElement("td");
+        const nameInput = document.createElement("input");
+        nameInput.type = "text";
+        nameInput.className = "edit-input";
+        nameInput.dataset.field = "full_name";
+        nameInput.placeholder = "ФИО";
+
+        const saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.className = "btn-compact";
+        saveBtn.textContent = "Сохранить";
+        saveBtn.style.marginLeft = "6px";
+        saveBtn.onclick = () => saveNewRow(row, month, year);
+
+        tdName.appendChild(nameInput);
+        tdName.appendChild(saveBtn);
+        row.appendChild(tdName);
+
+        // 4) Должность
+        const tdPosition = document.createElement("td");
+        tdPosition.appendChild(makeEditSelectNew(POSITION_OPTIONS, "position"));
+        row.appendChild(tdPosition);
+
+        // 5) Смена
+        const tdShift = document.createElement("td");
+        tdShift.appendChild(makeEditSelectNew(SHIFT_OPTIONS, "shift"));
+        row.appendChild(tdShift);
+
+        // 6) Дни
+        for (let i = 1; i <= days; i++) {
+            const td = document.createElement("td");
+            const select = document.createElement("select");
+            select.className = "day-select-new";
+            select.dataset.day = i;
+            select.innerHTML =
+                `<option value="">-</option>` +
+                workplaces.map(w => `<option value="${w.id}">${w.name}</option>`).join("");
+            td.appendChild(select);
+            row.appendChild(td);
+        }
+
+        tbody.insertBefore(row, tbody.firstChild);
+    }
+
+
+
+    // Select для новой строки (без residentId)
+    function makeEditSelectNew(options, field) {
+        const select = document.createElement("select");
+        select.className = "edit-select";
+        select.dataset.field = field;
+        options.forEach(opt => {
+            const option = document.createElement("option");
+            option.value = opt;
+            option.textContent = opt || "—";
+            select.appendChild(option);
+        });
+        return select;
+    }
+
+    async function saveNewRow(row, month, year) {
+        
+        const getValue = (field) => {
+            const el = row.querySelector(`[data-field="${field}"]`);
+            return el ? el.value : "";
+        };
+
+        const full_name = getValue("full_name");
+        if (!full_name) {
+            alert("Введите ФИО!");
+            return;
+        }
+
+        const check_in = `${year}-${String(month).padStart(2, "0")}-01`;
+        const lastDay = daysInMonth(month, year);
+        const check_out = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+        const data = {
+            field: getValue("room_location") || "—",
+            customer: "—",
+            full_name,
+            position: getValue("position"),
+            gender: getValue("gender"),
+            shift: getValue("shift"),
+            check_in,
+            check_out,
+            days: lastDay
+        };
 
         try {
             const response = await fetch("/api/add_resident", {
@@ -33,24 +159,131 @@ document.addEventListener("DOMContentLoaded", function () {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(data)
             });
-
-            const text = await response.text();
-            console.log("Ответ сервера:", text);
-
-            if (response.ok) {
-                alert("Запись добавлена!");
-                loadResidents();
-            } else {
-                alert("Ошибка сервера: " + text);
+            const result = await response.json();
+            if (!response.ok) {
+                alert(result.error || "Ошибка");
+                return;
             }
-        } catch (error) {
-            alert("Ошибка: " + error.message);
+
+            const residentId = result.resident_id;
+
+            // Сохраняем дни если есть resident_id
+            if (residentId) {
+                const daySelects = row.querySelectorAll(".day-select-new");
+                for (const sel of daySelects) {
+                    if (sel.value) {
+                        await fetch("/api/update_day", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                resident_id: residentId,
+                                day: parseInt(sel.dataset.day),
+                                month,
+                                year,
+                                workplace_id: parseInt(sel.value)
+                            })
+                        });
+                    }
+                }
+            }
+
+            alert("Запись добавлена!");
+            loadCalendar();
+
+        } catch (err) {
+            alert("Ошибка: " + err.message);
+        }
+    }
+
+    const saveResidentBtn = document.getElementById("saveResidentBtn");
+    if (saveResidentBtn) {
+        saveResidentBtn.addEventListener("click", async function () {
+            const checkIn = document.getElementById("checkInInput").value;
+            const checkOut = document.getElementById("checkOutInput").value;
+
+            const data = {
+                field: document.getElementById("fieldInput").value,
+                customer: document.getElementById("customerInput").value,
+                full_name: document.getElementById("fullNameInput").value,
+                check_in: checkIn,
+                check_out: checkOut,
+                days: calculateDays(checkIn, checkOut)
+            };
+
+            if (!data.field || !data.customer || !data.full_name || !data.check_in || !data.check_out) {
+                alert("Заполните все поля!");
+                return;
+            }
+
+            try {
+                const response = await fetch("/api/add_resident", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(data)
+                });
+                const result = await response.json();
+                if (response.ok) {
+                    alert(result.message);
+                    const form = document.getElementById("addResidentForm");
+                    if (form) form.style.display = "none";
+                    loadCalendar();
+                } else {
+                    alert(result.error || "Ошибка добавления");
+                }
+            } catch (error) {
+                alert("Ошибка: " + error.message);
+            }
+        });
+    }
+});
+
+// ===== РЕЖИМ РЕДАКТИРОВАНИЯ =====
+
+function toggleEditMode() {
+    editMode = !editMode;
+    const btn = document.getElementById("editModeBtn");
+    btn.textContent = editMode ? "✅ Выйти из редактирования" : "✏️ Режим редактирования";
+    btn.style.background = editMode ? "#4CAF50" : "";
+    btn.style.color = editMode ? "white" : "";
+
+    const month = document.getElementById("monthFilter").value;
+    const year = document.getElementById("yearFilter").value;
+    if (month && year) loadCalendar();
+}
+
+function makeEditSelect(options, currentValue, residentId, field) {
+    const select = document.createElement("select");
+    select.className = "edit-select";
+
+    options.forEach(opt => {
+        const option = document.createElement("option");
+        option.value = opt;
+        option.textContent = opt || "—";
+        if (opt === currentValue) option.selected = true;
+        select.appendChild(option);
+    });
+
+    select.addEventListener("change", async () => {
+        try {
+            const response = await fetch("/api/update_resident", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: residentId, [field]: select.value })
+            });
+            const result = await response.json();
+            if (result.status !== "ok") {
+                alert("Ошибка сохранения");
+            }
+        } catch (err) {
+            alert("Ошибка: " + err.message);
         }
     });
 
-    
-    
-});
+    return select;
+}
+
+// ===== ОТЧЁТ =====
+
 function downloadReport() {
     const dateFrom = document.getElementById("dateFrom").value;
     const dateTo = document.getElementById("dateTo").value;
@@ -60,77 +293,27 @@ function downloadReport() {
         return;
     }
 
-    window.open(`/api/get_report?date_from=${dateFrom}&date_to=${dateTo}`, "_blank");
+    if (dateFrom > dateTo) {
+        alert("Дата начала не может быть позже даты конца!");
+        return;
     }
-let dragStart = null; // {residentId, day, value}
-let dragMode = null;
 
-let workplaces = [];
+    window.open(`/api/get_report?date_in=${dateFrom}&date_out=${dateTo}`, "_blank");
+}
+
+// ===== ЗАГРУЗКА ДАННЫХ =====
 
 async function loadWorkplaces() {
     const res = await fetch("/api/workplaces");
     workplaces = await res.json();
 }
 
-async function loadResidents() {
-    try {
-        const response = await fetch("/api/residents");
-        const data = await response.json();
-        console.log(data);
-
-        const tbody = document.getElementById("calendarBody");
-        tbody.innerHTML = ""; // очищаем тело таблицы
-
-        data.forEach(item => {
-            const row = `
-                <tr>
-                    <td>${item.room_location}</td>
-                    <td>${item.room_path}</td>
-                    <td>${item.room_number}</td>
-                    <td>${item.room_capacity || ""}</td>
-                    <td>${item.gender || ""}</td>
-                    <td>${item.full_name}</td>
-                    <td>${item.position || ""}</td>
-                    <td>${item.shift || ""}</td>
-                    <td>${item.workplace || ""}</td>
-                </tr>
-            `;
-            tbody.innerHTML += row;
-        });
-
-    } catch (error) {
-        console.error("Ошибка загрузки данных:", error);
-    }
-}
-
-function formatDate(dateString) {
-    if (!dateString) return "";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("ru-RU");
-}
-
-function calculateDays(checkIn, checkOut) {
-    if (!checkIn || !checkOut) return 0;
-
-    const start = new Date(checkIn);
-    const end = new Date(checkOut);
-
-    const diffTime = end - start;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    return diffDays > 0 ? diffDays : 0;
-}
-
-
 async function loadFields() {
     try {
         const response = await fetch("/api/fields");
         const data = await response.json();
-
         const select = document.getElementById("fieldFilter");
-        // очищаем список перед добавлением
         select.innerHTML = '<option value="">Выберите месторождение</option>';
-
         data.forEach(field => {
             const option = document.createElement("option");
             option.value = field.id;
@@ -142,7 +325,19 @@ async function loadFields() {
     }
 }
 
-function generateCalendar(days){
+function calculateDays(checkIn, checkOut) {
+    if (!checkIn || !checkOut) return 0;
+    const start = new Date(checkIn);
+    const end = new Date(checkOut);
+    const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+    return diffDays > 0 ? diffDays : 0;
+}
+
+function daysInMonth(month, year) {
+    return new Date(year, month, 0).getDate();
+}
+
+function generateCalendar(days) {
     const head = document.getElementById("calendarHead");
     let row = "<tr>";
     row += "<th>Расположение</th>";
@@ -153,131 +348,93 @@ function generateCalendar(days){
     row += "<th>ФИО</th>";
     row += "<th>Должность</th>";
     row += "<th>Смена</th>";
-
-    // Если нужно, можно добавить дни календаря (1,2,3...)
     for (let i = 1; i <= days; i++) {
         row += `<th>${i}</th>`;
     }
-
-    row += "<th>Места работы</th>";
     row += "</tr>";
     head.innerHTML = row;
 }
 
-function daysInMonth(month,year){
-
-    return new Date(year, month, 0).getDate()
-
-}
-
 async function loadCalendar() {
     await loadWorkplaces();
+    await loadCustomers();
     const field = document.getElementById("fieldFilter").value;
     const year = document.getElementById("yearFilter").value;
     const month = document.getElementById("monthFilter").value;
 
-
     const days = daysInMonth(month, year);
-
-    // Формируем заголовок
     generateCalendar(days);
 
-    // Загружаем данные только в tbody
     const response = await fetch(`/api/residents?field=${field}&year=${year}&month=${month}`);
     const residents = await response.json();
 
     const tbody = document.getElementById("calendarBody");
-    tbody.innerHTML = ""; // очищаем только тело
+    tbody.innerHTML = "";
 
     residents.forEach(r => {
-    let row = `<tr>
-        <td>${r.room_location || ""}</td>
-        <td>${r.room_path || ""}</td>
-        <td>${r.room_number || ""}</td>
-        <td>${r.room_capacity || ""}</td>
-        <td>${r.gender || ""}</td>
-        <td>${r.full_name}</td>
-        <td>${r.position || ""}</td>
-        <td>${r.shift || ""}</td>`;
+        const row = document.createElement("tr");
 
-
-    for (let i = 1; i <= days; i++) {
-        const selectedId = r.days_info?.[i] || "";
-
-        row += `<td>
-            <select class="day-select" data-resident="${r.id}" data-day="${i}" title="Выберите рабочее место">
-                <option value="">-</option>
-                ${workplaces.map(w => `
-                    <option value="${w.id}" ${w.id == selectedId ? "selected" : ""}>
-                        ${w.name}
-                    </option>
-                `).join("")}
-            </select>
-        </td>`;
-    }
-
-
-    row += `</tr>`;
-
-    tbody.innerHTML += row;
-    initDragFill();
-});
-}
-
-const addResidentBtn = document.getElementById("addResidentBtn");
-const addResidentForm = document.getElementById("addResidentForm");
-
-addResidentBtn.addEventListener("click", () => {
-    if (addResidentForm.style.display === "none") {
-        addResidentForm.style.display = "block";
-    } else {
-        addResidentForm.style.display = "none";
-    }
-});
-
-const saveResidentBtn = document.getElementById("saveResidentBtn");
-
-saveResidentBtn.addEventListener("click", async () => {
-    const data = {
-        field: document.getElementById("fieldInput").value,
-        customer: document.getElementById("customerInput").value,
-        full_name: document.getElementById("fullNameInput").value,
-        check_in: document.getElementById("checkInInput").value,
-        check_out: document.getElementById("checkOutInput").value,
-        days: calculateDays(
-            document.getElementById("checkInInput").value,
-            document.getElementById("checkOutInput").value
-        )
-    };
-
-    if (!data.field || !data.customer || !data.full_name || !data.check_in || !data.check_out) {
-        alert("Заполните все поля!");
-        return;
-    }
-
-    // отправка на сервер
-    try {
-        const response = await fetch("/api/add_resident", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(data)
+        // Статичные ячейки
+        [r.room_location || "", r.room_path || "", r.room_number || "", r.room_capacity || ""].forEach(val => {
+            const td = document.createElement("td");
+            td.textContent = val;
+            row.appendChild(td);
         });
 
-        const result = await response.json();
-        if (response.ok) {
-            alert(result.message);
-            addResidentForm.style.display = "none";
-            loadResidents(); // обновляем таблицу после добавления
+        // Пол
+        const tdGender = document.createElement("td");
+        if (editMode) {
+            tdGender.appendChild(makeEditSelect(GENDER_OPTIONS, r.gender, r.id, "gender"));
         } else {
-            alert(result.error || "Ошибка добавления");
+            tdGender.textContent = r.gender || "";
         }
-    } catch (err) {
-        alert("Ошибка: " + err.message);
-    }
-});
+        row.appendChild(tdGender);
 
+        // ФИО — всегда текст
+        const tdName = document.createElement("td");
+        tdName.textContent = r.full_name;
+        row.appendChild(tdName);
 
+        // Должность
+        const tdPosition = document.createElement("td");
+        if (editMode) {
+            tdPosition.appendChild(makeEditSelect(POSITION_OPTIONS, r.position, r.id, "position"));
+        } else {
+            tdPosition.textContent = r.position || "";
+        }
+        row.appendChild(tdPosition);
 
+        // Смена
+        const tdShift = document.createElement("td");
+        if (editMode) {
+            tdShift.appendChild(makeEditSelect(SHIFT_OPTIONS, r.shift, r.id, "shift"));
+        } else {
+            tdShift.textContent = r.shift || "";
+        }
+        row.appendChild(tdShift);
+
+        // Дни
+        for (let i = 1; i <= days; i++) {
+            const selectedId = r.days_info?.[i] || "";
+            const td = document.createElement("td");
+            const select = document.createElement("select");
+            select.className = "day-select";
+            select.dataset.resident = r.id;
+            select.dataset.day = i;
+            select.title = "Выберите рабочее место";
+            select.innerHTML = `<option value="">-</option>` +
+                workplaces.map(w => `<option value="${w.id}" ${w.id == selectedId ? "selected" : ""}>${w.name}</option>`).join("");
+            td.appendChild(select);
+            row.appendChild(td);
+        }
+
+        tbody.appendChild(row);
+    });
+
+    initDragFill();
+}
+
+// ===== ИЗМЕНЕНИЕ ДНЯ =====
 
 document.addEventListener("change", async (e) => {
     if (e.target.classList.contains("day-select")) {
@@ -287,40 +444,22 @@ document.addEventListener("change", async (e) => {
         const month = document.getElementById("monthFilter").value;
         const year = document.getElementById("yearFilter").value;
 
-        let workplaceId = e.target.value;
-        if (!workplaceId) {
-            workplaceId = null;  // <- сюда пустое значение
-        } else {
-            workplaceId = parseInt(workplaceId);
-        }
-
-        console.log({residentId, day, month, year, workplaceId}); // <- проверь что отправляется
+        let workplaceId = e.target.value ? parseInt(e.target.value) : null;
 
         try {
             const response = await fetch("/api/update_day", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    resident_id: residentId,
-                    day: day,
-                    month: month,
-                    year: year,
-                    workplace_id: workplaceId
-                })
+                body: JSON.stringify({ resident_id: residentId, day, month, year, workplace_id: workplaceId })
             });
-
             const result = await response.json();
             console.log("Сохранено:", result);
-
         } catch (err) {
             alert("Ошибка: " + err.message);
         }
     }
 });
 
-
-
-// Функция сохранения одного дня
 async function saveDay(selectEl) {
     const residentId = selectEl.dataset.resident;
     const day = selectEl.dataset.day;
@@ -339,13 +478,15 @@ async function saveDay(selectEl) {
     }
 }
 
+// ===== DRAG FILL =====
+
 function initDragFill() {
     const tbody = document.getElementById("calendarBody");
 
     tbody.addEventListener("mousedown", (e) => {
         const td = e.target.closest("td");
         if (!td) return;
-        if (e.target.tagName === "SELECT") return; // клики по select пропускаем
+        if (e.target.tagName === "SELECT") return;
 
         const sel = td.querySelector(".day-select");
         if (!sel) return;
@@ -355,34 +496,23 @@ function initDragFill() {
             day: parseInt(sel.dataset.day),
             value: sel.value
         };
-
-        // Если значение есть — будем заполнять этим значением, иначе очищать
         dragMode = dragStart.value ? "fill" : "clear";
-
-        // Подсветка начального дня
         sel.classList.add("drag-highlight");
-
         e.preventDefault();
     });
 
     tbody.addEventListener("mouseover", (e) => {
         if (!dragStart) return;
-
         const td = e.target.closest("td");
         if (!td) return;
-
         const sel = td.querySelector(".day-select");
-        if (!sel) return;
-        if (sel.dataset.resident !== dragStart.residentId) return;
+        if (!sel || sel.dataset.resident !== dragStart.residentId) return;
 
         const currentDay = parseInt(sel.dataset.day);
         const start = Math.min(dragStart.day, currentDay);
         const end = Math.max(dragStart.day, currentDay);
 
-        // Сбрасываем подсветку всех дней этого жильца
         tbody.querySelectorAll(`.day-select[data-resident='${dragStart.residentId}']`).forEach(s => s.classList.remove("drag-highlight"));
-
-        // Подсвечиваем диапазон
         for (let i = start; i <= end; i++) {
             const cell = tbody.querySelector(`.day-select[data-resident='${dragStart.residentId}'][data-day='${i}']`);
             if (cell) cell.classList.add("drag-highlight");
@@ -391,47 +521,13 @@ function initDragFill() {
 
     document.addEventListener("mouseup", async () => {
         if (!dragStart) return;
-
         const selList = tbody.querySelectorAll(`.day-select[data-resident='${dragStart.residentId}'].drag-highlight`);
-
         for (const sel of selList) {
             sel.value = dragMode === "fill" ? dragStart.value : "";
             await saveDay(sel);
         }
-
         selList.forEach(s => s.classList.remove("drag-highlight"));
-
         dragStart = null;
         dragMode = null;
     });
 }
-
-/*document.getElementById("uploadForm").addEventListener("submit", async function(e) {
-    e.preventDefault();
-
-    const fileInput = document.getElementById("excelFile");
-    if (!fileInput.files.length) {
-        alert("Выберите файл Excel");
-        return;
-    }
-
-    const formData = new FormData();
-    formData.append("file", fileInput.files[0]);
-
-    try {
-        const response = await fetch("/api/upload_excel", {
-            method: "POST",
-            body: formData
-        });
-
-        const result = await response.json();
-        if (response.ok) {
-            alert(result.message);
-            loadResidents();
-        } else {
-            alert(result.error || "Ошибка загрузки");
-        }
-    } catch (err) {
-        alert("Ошибка: " + err.message);
-    }
-});*/

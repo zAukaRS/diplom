@@ -87,6 +87,7 @@ def get_residents(db: Session = Depends(get_db)):
             "full_name": r.full_name,
             "position": r.position or "",
             "gender": r.gender or "",
+            "shift": r.shift or "",
             "field": field.name if field else "",
             "customer": customer.name if customer else "",
             "days_info": days_info,
@@ -197,7 +198,7 @@ def add_resident(data: dict = Body(...), db: Session = Depends(get_db)):
             current += timedelta(days=1)
         db.commit()
 
-        return {"message": "Запись успешно добавлена"}
+        return {"message": "Запись успешно добавлена", "resident_id": resident.id}
 
     except Exception as e:
         return {"error": str(e)}
@@ -325,32 +326,71 @@ def create_report(dict_list: list, output_filename: str, sheet_name='расч.л
 
 
 @app.get('/api/get_report')
-def get_report(date_in : date, date_out : date, db: Session = Depends(get_db)):
-    
-    # print(f"Ищем за период: {date_from} — {date_to}") 
-
+def get_report(date_in: date, date_out: date, db: Session = Depends(get_db)):
     residents = db.query(models.Resident).join(models.Field).join(models.Customer)\
         .filter(and_(
-                models.Resident.check_in <= date_out,
-                models.Resident.check_out >= date_in)
-        ).order_by(
+            models.Resident.check_in <= date_out,
+            models.Resident.check_out >= date_in
+        )).order_by(
             models.Field.name,
             models.Customer.name,
         ).all()
 
-    # print(f"Найдено жильцов: {len(residents)}")  
-
     if not residents:
-        return JSONResponse({"error": "Нет данных за выбранный месяц"}, status_code=404)
-    f = [{
-        'Месторождение': r.field.name,
-        'Заказчик': r.customer.name,
-        'ФИО проживающего': r.full_name,
-        'Дата заезда': r.check_in,
-        'Дата выезда': r.check_out if r.check_out <= date_out else None,
-        'Количество дней': len(r.resident_days) if r.check_out <= date_out else (date_out -r.check_in).days + 1
-    } for r in residents]
+        return JSONResponse({"error": "Нет данных за выбранный период"}, status_code=404)
 
+    f = []
+    for r in residents:
+        actual_in = r.check_in if r.check_in >= date_in else date_in
+        actual_out = r.check_out if r.check_out and r.check_out <= date_out else date_out
+        days = (actual_out - actual_in).days + 1
+
+        f.append({
+            'Месторождение': r.field.name,
+            'Заказчик': r.customer.name,
+            'ФИО проживающего': r.full_name,
+            'Дата заезда': actual_in,
+            'Дата выезда': actual_out,
+            'Количество дней': days
+        })
+    print('12312312312312312')
+    file_path = create_report(f, f"report_{date_in}_{date_out}.xlsx")
+    return FileResponse(file_path, filename=os.path.basename(file_path))
+
+
+
+# открваем файл html - "create_user.html"
+@app.get('/create_user')
+async def get_create_user():
+    return HTMLResponse((FRONTEND_DIR / "create_user.html").read_text(encoding="utf-8"))
+
+# @app.post('/api/create_user')
+# async def post_create_user(user_name : str, db: Session = Depends(get_db)):
+#     db.add(models.Role)
+
+@app.post("/api/update_resident")
+def update_resident(data: dict = Body(...), db: Session = Depends(get_db)):
+    try:
+        resident = db.query(models.Resident).filter(models.Resident.id == data["id"]).first()
+        if not resident:
+            return JSONResponse(content={"error": "Жилец не найден"}, status_code=404)
+
+        if "position" in data:
+            resident.position = data["position"]
+        if "gender" in data:
+            resident.gender = data["gender"]
+        if "shift" in data:
+            resident.shift = data["shift"]
+
+        db.commit()
+        db.refresh(resident)
+        return JSONResponse(content={"status": "ok"})
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(content={"status": "error", "detail": str(e)}, status_code=500)
     
-    file_path = create_report(f, f"report_sine{date_in.month}.xlsx")
-    return FileResponse(file_path, filename=file_path)
+
+@app.get("/api/customers")
+def get_customers(db: Session = Depends(get_db)):
+    customers = db.query(models.Customer).all()
+    return [{"id": c.id, "name": c.name} for c in customers]
