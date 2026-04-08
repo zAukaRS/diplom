@@ -121,7 +121,7 @@ def get_residents(word : Optional[str] = None, by_field : Optional[str] = None,d
     query = db.query(models.Resident)\
         .join(models.Field)\
         .join(models.Customer)\
-        .join(models.Room)\
+        .join(models.Room, models.Resident.room_id == models.Room.id)\
         .join(models.Location)
     if by_field:
         query = query.filter(
