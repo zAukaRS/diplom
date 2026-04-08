@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Управление администраторами</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/admin_management.css">
+</head>
+<body>
+
+<div class="container">
+
+    <aside class="sidebar">
+        <h2>Админ-панель</h2>
+        <ul>
+            <li><a href="/home">🏠 Главная</a></li>
+            <li>📊 Отчёты</li>
+            <li>🛏 Комнаты</li>
+            <li>🏢 Общежития</li>
+            <li><a href="/admin_management">👤 Управление админами</a></li>
+            <li><a href="/logout">🚪 Выход</a></li>
+        </ul>
+    </aside>
+
+
+    <div class="main-content">
+        <header>
+            <h1>Управление администраторами</h1>
+        </header>
+
+        <section class="admin-form-section">
+            <h2>Добавить администратора</h2>
+            <div class="admin-form">
+                <input type="text" id="newAdminUsername" placeholder="Логин" required>
+                <input type="password" id="newAdminPassword" placeholder="Пароль" required>
+                <button id="createAdminBtn">Создать</button>
+            </div>
+            <p id="adminMessage" class="error"></p>
+        </section>
+
+
+        <section class="admin-list-section">
+            <h2>Существующие администраторы</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Логин</th>
+                        <th>Пароль</th>
+                        <th>Общежитие</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody id="adminTableBody"></tbody>
+            </table>
+        </section>
+    </div>
+</div>
+
+<script src="js/admin_management.js"></script>
+</body>
+</html>

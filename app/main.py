@@ -2,6 +2,9 @@ from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+
+from werkzeug.security import generate_password_hash
+
 from .database import Base, engine
 from sqlalchemy.orm import Session
 from sqlalchemy import text,or_,and_
@@ -18,6 +21,17 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
+from .models import Role
+
+from fastapi import FastAPI, Request
+from .models import User
+from werkzeug.security import generate_password_hash
+from .utils import get_admin_role_id
+
+from fastapi.templating import Jinja2Templates
+
+
+app = FastAPI()
 
 # uvicorn app.main:app --reload
 
@@ -360,3 +374,99 @@ def get_report(date_in : date, date_out : date, db: Session = Depends(get_db)):
     
     file_path = create_report(f, f"report_sine{date_in.month}.xlsx")
     return FileResponse(file_path, filename=file_path)
+
+
+
+
+
+@app.post("/api/create_admin")
+async def create_admin(request: Request):
+    data = await request.json()
+    username = data.get("username")
+    password = data.get("password")
+
+    if not username or not password:
+        return {"error": "Все поля обязательны"}, 400
+
+    db = SessionLocal()
+    try:
+        # Проверяем, есть ли уже такой логин
+        if db.query(User).filter(User.username == username).first():
+            return {"error": "Логин уже существует"}, 400
+
+        admin_role_id = get_admin_role_id()
+
+        hashed_password = generate_password_hash(password)
+
+        new_admin = User(
+            username=username,
+            password=hashed_password,
+            role_id=admin_role_id
+        )
+        db.add(new_admin)
+        db.commit()
+        db.refresh(new_admin)
+
+        return {"message": f"Админ {username} создан!"}
+
+    finally:
+        db.close()
+
+
+
+BASE_DIR = Path(__file__).parent.parent
+FRONTEND_DIR = BASE_DIR / "frontend"
+templates = Jinja2Templates(directory=FRONTEND_DIR)
+
+@app.get("/admin_management", response_class=HTMLResponse)
+def admin_page(request: Request):
+    return templates.TemplateResponse("admin_management.html", {"request": request})
+
+@app.get("/api/get_admins")
+def get_admins(db: Session = Depends(get_db)):
+    admins = db.query(User).join(Role).filter(Role.name == "admin").all()
+
+    return [
+        {
+            "id": u.id,
+            "username": u.username,
+            "field": u.field.name if hasattr(u, "field") and u.field else ""
+        }
+        for u in admins
+    ]
+
+@app.put("/api/update_admin_inline/{admin_id}")
+async def update_admin_inline(admin_id: int, data: dict = Body(...)):
+    db = SessionLocal()
+    try:
+        admin = db.query(User).filter(User.id == admin_id).first()
+        if not admin:
+            return {"error": "Админ не найден"}
+
+        if data.get("username"):
+            admin.username = data["username"]
+
+        if data.get("password"):
+            admin.password = generate_password_hash(data["password"])
+
+        if data.get("field_id"):
+            admin.field_id = data["field_id"]
+
+        db.commit()
+        return {"message": "Обновлено"}
+
+    finally:
+        db.close()
+
+
+@app.delete("/api/delete_admin/{admin_id}")
+def delete_admin(admin_id: int, db: Session = Depends(get_db)):
+    admin = db.query(User).filter(User.id == admin_id).first()
+
+    if not admin:
+        return {"error": "Админ не найден"}
+
+    db.delete(admin)
+    db.commit()
+
+    return {"message": "Удален"}
