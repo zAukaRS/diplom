@@ -8,7 +8,7 @@ from werkzeug.security import generate_password_hash
 
 from .database import Base, engine
 from sqlalchemy.orm import Session
-from sqlalchemy import text,or_,and_
+from sqlalchemy import text, and_
 from .database import SessionLocal
 from fastapi.responses import JSONResponse
 from fastapi import File, UploadFile, Depends
@@ -21,14 +21,14 @@ import os
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-<<<<<<< HEAD
 from werkzeug.security import check_password_hash
 
-=======
 from typing import Dict, List, Optional
->>>>>>> 7821dcdbbeb56f88c1e6deab3aabf77433d219e2
 from .models import User, Role
 from .utils import get_admin_role_id
+
+from sqlalchemy.orm import joinedload
+from sqlalchemy import or_
 
 
 # uvicorn app.main:app --reload
@@ -127,17 +127,24 @@ def fill_result(residents : List[Dict]):
 
 
 
+
+
 @app.get("/api/residents")
-def get_residents(word : Optional[str] = None, by_field : Optional[str] = None,db: Session = Depends(get_db)):
+def get_residents(word: Optional[str] = None, by_field: Optional[str] = None, db: Session = Depends(get_db)):
+    # Загружаем всех резидентов с их связями
     query = db.query(models.Resident)\
-        .join(models.Field)\
-        .join(models.Customer)\
-        .join(models.Room)\
-        .join(models.Location)
-    if by_field:
-        query = query.filter(
-            models.Field.name.ilike(f"{by_field.lower()}%")
+        .join(models.Field, models.Resident.field_id == models.Field.id)\
+        .join(models.Customer, models.Resident.customer_id == models.Customer.id)\
+        .join(models.Room, models.Resident.room_id == models.Room.id)\
+        .join(models.Location, models.Room.location_id == models.Location.id)\
+        .options(
+            joinedload(models.Resident.field),
+            joinedload(models.Resident.customer),
+            joinedload(models.Resident.room).joinedload(models.Room.location)
         )
+
+    if by_field:
+        query = query.filter(models.Field.name.ilike(f"{by_field}%"))
 
     if word:
         word = word.lower()
@@ -153,10 +160,36 @@ def get_residents(word : Optional[str] = None, by_field : Optional[str] = None,d
 
     residents = query.all()
 
-    result = fill_result(residents)
+    # Формируем понятный JSON
+    result = []
+    for r in residents:
+        room = r.room
+        location = room.location if room else None
+        field = r.field
+        customer = r.customer
+
+        # Дни проживания
+        days_info = {}
+        for rd in getattr(r, "resident_days", []):
+            day = rd.date.day
+            days_info[day] = rd.workplace_id
+
+        result.append({
+            "id": r.id,
+            "full_name": r.full_name,
+            "position": r.position or "",
+            "gender": r.gender or "",
+            "shift": r.shift or "",
+            "room_number": room.room_number if room else "",
+            "room_location": location.name if location else "",
+            "room_path": getattr(room, "path", None).description if getattr(room, "path", None) else "",
+            "field": field.name if field else "",
+            "customer": customer.name if customer else "",
+            "days_info": days_info
+        })
 
     if word and not result:
-        return {'error': "Ничего не нашлось"}
+        return {"error": "Ничего не нашлось"}
 
     return JSONResponse(content=result)
     
@@ -428,8 +461,8 @@ def get_report(date_in : date, date_out : date, db: Session = Depends(get_db)):
         return FileResponse(file_path, filename=os.path.basename(file_path))
 
 
-<<<<<<< HEAD
-=======
+
+
     f = []
     for r in residents:
         actual_in = r.check_in if r.check_in >= date_in else date_in
@@ -448,7 +481,6 @@ def get_report(date_in : date, date_out : date, db: Session = Depends(get_db)):
     file_path = create_report(f, f"report_{date_in}_{date_out}.xlsx")
     return FileResponse(file_path, filename=os.path.basename(file_path))
 
->>>>>>> 7821dcdbbeb56f88c1e6deab3aabf77433d219e2
 
 
 BASE_DIR = Path(__file__).parent.parent
@@ -546,15 +578,9 @@ async def delete_admin(admin_id: int):
     finally:
         db.close()
 
-<<<<<<< HEAD
-=======
-@app.get("/api/customers")
-def get_customers(db: Session = Depends(get_db)):
-    customers = db.query(models.Customer).all()
-    return [{"id": c.id, "name": c.name} for c in customers]
 
 
->>>>>>> 7821dcdbbeb56f88c1e6deab3aabf77433d219e2
+
 @app.post("/api/update_resident")
 def update_resident(data: dict = Body(...), db: Session = Depends(get_db)):
     try:
@@ -575,12 +601,12 @@ def update_resident(data: dict = Body(...), db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         return JSONResponse(content={"status": "error", "detail": str(e)}, status_code=500)
-<<<<<<< HEAD
+
 
 @app.get("/api/customers")
 def get_customers(db: Session = Depends(get_db)):
     customers = db.query(models.Customer).all()
     return [{"id": c.id, "name": c.name} for c in customers]
-=======
+
     
->>>>>>> 7821dcdbbeb56f88c1e6deab3aabf77433d219e2
+
