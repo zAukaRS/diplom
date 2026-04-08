@@ -21,9 +21,10 @@ import os
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from werkzeug.security import check_password_hash
 
 from .models import User, Role
-
+from .utils import get_admin_role_id
 
 # uvicorn app.main:app --reload
 
@@ -36,6 +37,8 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 app.mount("/css", StaticFiles(directory=FRONTEND_DIR / "css"), name="css")
 app.mount("/js", StaticFiles(directory=FRONTEND_DIR / "js"), name="js")
 
+
+
 # Страница логина
 @app.get("/login", response_class=HTMLResponse)
 async def login_page():
@@ -43,12 +46,16 @@ async def login_page():
 
 fake_users = {"admin": "Password1"}
 
-# Обработка логина
 @app.post("/login")
-async def login(username: str = Form(...), password: str = Form(...)):
-    if username in fake_users and fake_users[username] == password:
+async def login(username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == username).first()
+
+    if not user:
+        return HTMLResponse("<h3>Неверный логин или пароль</h3><a href='/login'>Назад</a>")
+    if check_password_hash(user.password, password):
         return RedirectResponse(url="/home", status_code=303)
-    return HTMLResponse("<h3>Неверный логин или пароль</h3><a href='/login'>Назад</a>")
+    else:
+        return HTMLResponse("<h3>Неверный логин или пароль</h3><a href='/login'>Назад</a>")
 
 # Главная страница
 @app.get("/home", response_class=HTMLResponse)
@@ -203,7 +210,7 @@ def add_resident(data: dict = Body(...), db: Session = Depends(get_db)):
             current += timedelta(days=1)
         db.commit()
 
-        return {"message": "Запись успешно добавлена"}
+        return {"message": "Запись успешно добавлена", "resident_id": resident.id}
 
     except Exception as e:
         return {"error": str(e)}
@@ -347,19 +354,27 @@ def get_report(date_in : date, date_out : date, db: Session = Depends(get_db)):
     # print(f"Найдено жильцов: {len(residents)}")  
 
     if not residents:
-        return JSONResponse({"error": "Нет данных за выбранный месяц"}, status_code=404)
-    f = [{
-        'Месторождение': r.field.name,
-        'Заказчик': r.customer.name,
-        'ФИО проживающего': r.full_name,
-        'Дата заезда': r.check_in,
-        'Дата выезда': r.check_out if r.check_out <= date_out else None,
-        'Количество дней': len(r.resident_days) if r.check_out <= date_out else (date_out -r.check_in).days + 1
-    } for r in residents]
+        return JSONResponse({"error": "Нет данных за выбранный период"}, status_code=404)
 
-    
-    file_path = create_report(f, f"report_sine{date_in.month}.xlsx")
-    return FileResponse(file_path, filename=file_path)
+        f = []
+        for r in residents:
+            actual_in = r.check_in if r.check_in >= date_in else date_in
+            actual_out = r.check_out if r.check_out and r.check_out <= date_out else date_out
+            days = (actual_out - actual_in).days + 1
+
+            f.append({
+                'Месторождение': r.field.name,
+                'Заказчик': r.customer.name,
+                'ФИО проживающего': r.full_name,
+                'Дата заезда': actual_in,
+                'Дата выезда': actual_out,
+                'Количество дней': days
+            })
+        print('12312312312312312')
+        file_path = create_report(f, f"report_{date_in}_{date_out}.xlsx")
+        return FileResponse(file_path, filename=os.path.basename(file_path))
+
+
 
 
 BASE_DIR = Path(__file__).parent.parent
@@ -369,22 +384,6 @@ app.mount("/css", StaticFiles(directory=FRONTEND_DIR / "css"), name="css")
 app.mount("/js", StaticFiles(directory=FRONTEND_DIR / "js"), name="js")
 
 templates = Jinja2Templates(directory=FRONTEND_DIR)
-
-def get_admin_role_id():
-    db = SessionLocal()
-    try:
-        role = db.query(Role).filter(Role.name == "admin").first()
-        if role:
-            return role.id
-        # создаем, если роли нет
-        new_role = Role(name="admin")
-        db.add(new_role)
-        db.commit()
-        db.refresh(new_role)
-        return new_role.id
-    finally:
-        db.close()
-
 
 
 @app.get("/admin_management", response_class=HTMLResponse)
@@ -398,7 +397,7 @@ def get_admins(db: Session = Depends(get_db)):
     result = []
     for u in admins:
         # добавляем поле "field" если оно есть, иначе None
-        field_name = getattr(u, "field", None)
+        field_name = u.field.name if hasattr(u, "field") and u.field else ""
         result.append({
             "id": u.id,
             "username": u.username,
@@ -471,3 +470,29 @@ async def delete_admin(admin_id: int):
         return {"message": "Админ удален"}
     finally:
         db.close()
+
+@app.post("/api/update_resident")
+def update_resident(data: dict = Body(...), db: Session = Depends(get_db)):
+    try:
+        resident = db.query(models.Resident).filter(models.Resident.id == data["id"]).first()
+        if not resident:
+            return JSONResponse(content={"error": "Жилец не найден"}, status_code=404)
+
+        if "position" in data:
+            resident.position = data["position"]
+        if "gender" in data:
+            resident.gender = data["gender"]
+        if "shift" in data:
+            resident.shift = data["shift"]
+
+        db.commit()
+        db.refresh(resident)
+        return JSONResponse(content={"status": "ok"})
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(content={"status": "error", "detail": str(e)}, status_code=500)
+
+@app.get("/api/customers")
+def get_customers(db: Session = Depends(get_db)):
+    customers = db.query(models.Customer).all()
+    return [{"id": c.id, "name": c.name} for c in customers]
