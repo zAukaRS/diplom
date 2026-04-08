@@ -21,10 +21,15 @@ import os
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+<<<<<<< HEAD
 from werkzeug.security import check_password_hash
 
+=======
+from typing import Dict, List, Optional
+>>>>>>> 7821dcdbbeb56f88c1e6deab3aabf77433d219e2
 from .models import User, Role
 from .utils import get_admin_role_id
+
 
 # uvicorn app.main:app --reload
 
@@ -75,24 +80,38 @@ def logout():
     response.delete_cookie(key="session")
     return response
 
-@app.get("/api/residents")
-def get_residents(db: Session = Depends(get_db)):
-    residents = db.query(models.Resident).all()
+def search(word : str, data : list):
+    word = word.lower()
+    filters = ['full_name','position','room_number','field','room_location']
+    for i in filters:
+        res = [{"id": r.id,
+                "room_number": r.room_number or "",
+                "room_location": r.room_location or "",
+                "room_path": r.room_path or "",
+                "full_name": r.full_name ,
+                "position": r.position or "",
+                "gender": r.gender or "",
+                "shift": r.shift or "",
+                "field": r.field ,
+                "customer": r.customer,
+                "days_info": r.days_info} for r in data if r[i] == f'{word}%']
+        if res:
+            return res
+        
+def fill_result(residents : List[Dict]):
     data = []
-
     for r in residents:
-        room = r.room
-        location = room.location if room else None
-        path = room.path if room else None
-        field = r.field
-        customer = r.customer
+            room = r.room
+            location = room.location if room else None
+            path = room.path if room else None
+            field = r.field
+            customer = r.customer
 
-        days_info = {}
-        for rd in r.resident_days:
-            day = rd.date.day
-            days_info[day] = rd.workplace_id
-
-        data.append({
+            days_info = {}
+            for rd in r.resident_days:
+                day = rd.date.day
+                days_info[day] = rd.workplace_id
+            data.append({
             "id": r.id,
             "room_number": room.room_number if room else "",
             "room_location": location.name if location else "",
@@ -103,10 +122,44 @@ def get_residents(db: Session = Depends(get_db)):
             "field": field.name if field else "",
             "customer": customer.name if customer else "",
             "days_info": days_info,
+            })
+    return data
 
-        })
 
-    return JSONResponse(content=data)
+
+@app.get("/api/residents")
+def get_residents(word : Optional[str] = None, by_field : Optional[str] = None,db: Session = Depends(get_db)):
+    query = db.query(models.Resident)\
+        .join(models.Field)\
+        .join(models.Customer)\
+        .join(models.Room)\
+        .join(models.Location)
+    if by_field:
+        query = query.filter(
+            models.Field.name.ilike(f"{by_field.lower()}%")
+        )
+
+    if word:
+        word = word.lower()
+        query = query.filter(
+            or_(
+                models.Resident.full_name.ilike(f"{word}%"),
+                models.Resident.position.ilike(f"{word}%"),
+                models.Room.room_number.ilike(f"{word}%"),
+                models.Location.name.ilike(f"{word}%"),
+                models.Customer.name.ilike(f"{word}%")
+            )
+        )
+
+    residents = query.all()
+
+    result = fill_result(residents)
+
+    if word and not result:
+        return {'error': "Ничего не нашлось"}
+
+    return JSONResponse(content=result)
+    
 
 
 def parse_date_dd_mm_yyyy(date_str):
@@ -375,10 +428,32 @@ def get_report(date_in : date, date_out : date, db: Session = Depends(get_db)):
         return FileResponse(file_path, filename=os.path.basename(file_path))
 
 
+<<<<<<< HEAD
+=======
+    f = []
+    for r in residents:
+        actual_in = r.check_in if r.check_in >= date_in else date_in
+        actual_out = r.check_out if r.check_out and r.check_out <= date_out else date_out
+        days = (actual_out - actual_in).days + 1
+
+        f.append({
+            'Месторождение': r.field.name,
+            'Заказчик': r.customer.name,
+            'ФИО проживающего': r.full_name,
+            'Дата заезда': actual_in,
+            'Дата выезда': actual_out,
+            'Количество дней': days
+        })
+    # print('12312312312312312')
+    file_path = create_report(f, f"report_{date_in}_{date_out}.xlsx")
+    return FileResponse(file_path, filename=os.path.basename(file_path))
+
+>>>>>>> 7821dcdbbeb56f88c1e6deab3aabf77433d219e2
 
 
 BASE_DIR = Path(__file__).parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
+
 
 app.mount("/css", StaticFiles(directory=FRONTEND_DIR / "css"), name="css")
 app.mount("/js", StaticFiles(directory=FRONTEND_DIR / "js"), name="js")
@@ -471,6 +546,15 @@ async def delete_admin(admin_id: int):
     finally:
         db.close()
 
+<<<<<<< HEAD
+=======
+@app.get("/api/customers")
+def get_customers(db: Session = Depends(get_db)):
+    customers = db.query(models.Customer).all()
+    return [{"id": c.id, "name": c.name} for c in customers]
+
+
+>>>>>>> 7821dcdbbeb56f88c1e6deab3aabf77433d219e2
 @app.post("/api/update_resident")
 def update_resident(data: dict = Body(...), db: Session = Depends(get_db)):
     try:
@@ -491,8 +575,12 @@ def update_resident(data: dict = Body(...), db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         return JSONResponse(content={"status": "error", "detail": str(e)}, status_code=500)
+<<<<<<< HEAD
 
 @app.get("/api/customers")
 def get_customers(db: Session = Depends(get_db)):
     customers = db.query(models.Customer).all()
     return [{"id": c.id, "name": c.name} for c in customers]
+=======
+    
+>>>>>>> 7821dcdbbeb56f88c1e6deab3aabf77433d219e2
