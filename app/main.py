@@ -1,7 +1,11 @@
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+
+from starlette.templating import Jinja2Templates
+from werkzeug.security import generate_password_hash
+
 from .database import Base, engine
 from sqlalchemy.orm import Session
 from sqlalchemy import text,or_,and_
@@ -17,6 +21,8 @@ import os
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+
+from .models import User, Role
 
 
 # uvicorn app.main:app --reload
@@ -354,3 +360,114 @@ def get_report(date_in : date, date_out : date, db: Session = Depends(get_db)):
     
     file_path = create_report(f, f"report_sine{date_in.month}.xlsx")
     return FileResponse(file_path, filename=file_path)
+
+
+BASE_DIR = Path(__file__).parent.parent
+FRONTEND_DIR = BASE_DIR / "frontend"
+
+app.mount("/css", StaticFiles(directory=FRONTEND_DIR / "css"), name="css")
+app.mount("/js", StaticFiles(directory=FRONTEND_DIR / "js"), name="js")
+
+templates = Jinja2Templates(directory=FRONTEND_DIR)
+
+def get_admin_role_id():
+    db = SessionLocal()
+    try:
+        role = db.query(Role).filter(Role.name == "admin").first()
+        if role:
+            return role.id
+        # создаем, если роли нет
+        new_role = Role(name="admin")
+        db.add(new_role)
+        db.commit()
+        db.refresh(new_role)
+        return new_role.id
+    finally:
+        db.close()
+
+
+
+@app.get("/admin_management", response_class=HTMLResponse)
+def admin_page(request: Request):
+    return templates.TemplateResponse("admin_management.html", {"request": request})
+
+
+@app.get("/api/get_admins")
+def get_admins(db: Session = Depends(get_db)):
+    admins = db.query(User).join(Role).filter(Role.name == "admin").all()
+    result = []
+    for u in admins:
+        # добавляем поле "field" если оно есть, иначе None
+        field_name = getattr(u, "field", None)
+        result.append({
+            "id": u.id,
+            "username": u.username,
+            "field": field_name
+        })
+    return result
+
+
+@app.post("/api/create_admin")
+async def create_admin(request: Request):
+    data = await request.json()
+    username = data.get("username")
+    password = data.get("password")
+
+    if not username or not password:
+        return JSONResponse({"error": "Все поля обязательны"}, status_code=400)
+
+    db = SessionLocal()
+    try:
+        # проверка уникальности
+        if db.query(User).filter(User.username == username).first():
+            return JSONResponse({"error": "Логин уже существует"}, status_code=400)
+
+        admin_role_id = get_admin_role_id()
+        hashed_password = generate_password_hash(password)
+
+        new_admin = User(
+            username=username,
+            password=hashed_password,
+            role_id=admin_role_id
+        )
+        db.add(new_admin)
+        db.commit()
+        db.refresh(new_admin)
+        return {"message": f"Админ {username} создан!"}
+    finally:
+        db.close()
+
+
+@app.put("/api/update_admin_inline/{admin_id}")
+async def update_admin_inline(admin_id: int, data: dict = Body(...)):
+    db = SessionLocal()
+    try:
+        admin = db.query(User).filter(User.id == admin_id).first()
+        if not admin:
+            return JSONResponse({"error": "Админ не найден"}, status_code=404)
+
+        if data.get("username"):
+            admin.username = data["username"]
+        if data.get("password"):
+            admin.password = generate_password_hash(data["password"])
+        if data.get("field_id"):
+            admin.field_id = data["field_id"]
+
+        db.commit()
+        return {"message": "Обновлено"}
+    finally:
+        db.close()
+
+
+@app.delete("/api/delete_admin/{admin_id}")
+async def delete_admin(admin_id: int):
+    db = SessionLocal()
+    try:
+        admin = db.query(User).filter(User.id == admin_id).first()
+        if not admin:
+            return JSONResponse({"error": "Админ не найден"}, status_code=404)
+        db.delete(admin)
+        db.commit()
+        return {"message": "Админ удален"}
+    finally:
+        db.close()
