@@ -1,7 +1,11 @@
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+
+from starlette.templating import Jinja2Templates
+from werkzeug.security import generate_password_hash
+
 from .database import Base, engine
 from sqlalchemy.orm import Session
 from sqlalchemy import text,or_,and_
@@ -18,6 +22,9 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from typing import Dict, List, Optional
+from .models import User, Role
+
+
 
 # uvicorn app.main:app --reload
 
@@ -93,22 +100,21 @@ def fill_result(residents : List[Dict]):
             for rd in r.resident_days:
                 day = rd.date.day
                 days_info[day] = rd.workplace_id
-
             data.append({
-                "id": r.id,
-                "room_number": room.room_number if room else "",
-                "room_location": location.name if location else "",
-                "room_path": path.description if path else "",
-                "full_name": r.full_name,
-                "position": r.position or "",
-                "gender": r.gender or "",
-                "shift": r.shift or "",
-                "field": field.name if field else "",
-                "customer": customer.name if customer else "",
-                "days_info": days_info,
-
+            "id": r.id,
+            "room_number": room.room_number if room else "",
+            "room_location": location.name if location else "",
+            "room_path": path.description if path else "",
+            "full_name": r.full_name,
+            "position": r.position or "",
+            "gender": r.gender or "",
+            "field": field.name if field else "",
+            "customer": customer.name if customer else "",
+            "days_info": days_info,
             })
     return data
+
+
 
 @app.get("/api/residents")
 def get_residents(word : Optional[str] = None, by_field : Optional[str] = None,db: Session = Depends(get_db)):
@@ -246,7 +252,7 @@ def add_resident(data: dict = Body(...), db: Session = Depends(get_db)):
             current += timedelta(days=1)
         db.commit()
 
-        return {"message": "Запись успешно добавлена", "resident_id": resident.id}
+        return {"message": "Запись успешно добавлена"}
 
     except Exception as e:
         return {"error": str(e)}
@@ -374,18 +380,31 @@ def create_report(dict_list: list, output_filename: str, sheet_name='расч.л
 
 
 @app.get('/api/get_report')
-def get_report(date_in: date, date_out: date, db: Session = Depends(get_db)):
+def get_report(date_in : date, date_out : date, db: Session = Depends(get_db)):
+    
+    # print(f"Ищем за период: {date_from} — {date_to}") 
+
     residents = db.query(models.Resident).join(models.Field).join(models.Customer)\
         .filter(and_(
-            models.Resident.check_in <= date_out,
-            models.Resident.check_out >= date_in
-        )).order_by(
+                models.Resident.check_in <= date_out,
+                models.Resident.check_out >= date_in)
+        ).order_by(
             models.Field.name,
             models.Customer.name,
         ).all()
 
+    # print(f"Найдено жильцов: {len(residents)}")  
+
     if not residents:
-        return JSONResponse({"error": "Нет данных за выбранный период"}, status_code=404)
+        return JSONResponse({"error": "Нет данных за выбранный месяц"}, status_code=404)
+    f = [{
+        'Месторождение': r.field.name,
+        'Заказчик': r.customer.name,
+        'ФИО проживающего': r.full_name,
+        'Дата заезда': r.check_in,
+        'Дата выезда': r.check_out if r.check_out <= date_out else None,
+        'Количество дней': len(r.resident_days) if r.check_out <= date_out else (date_out -r.check_in).days + 1
+    } for r in residents]
 
     f = []
     for r in residents:
@@ -406,6 +425,122 @@ def get_report(date_in: date, date_out: date, db: Session = Depends(get_db)):
     return FileResponse(file_path, filename=os.path.basename(file_path))
 
 
+
+BASE_DIR = Path(__file__).parent.parent
+FRONTEND_DIR = BASE_DIR / "frontend"
+
+
+app.mount("/css", StaticFiles(directory=FRONTEND_DIR / "css"), name="css")
+app.mount("/js", StaticFiles(directory=FRONTEND_DIR / "js"), name="js")
+
+templates = Jinja2Templates(directory=FRONTEND_DIR)
+
+def get_admin_role_id():
+    db = SessionLocal()
+    try:
+        role = db.query(Role).filter(Role.name == "admin").first()
+        if role:
+            return role.id
+        # создаем, если роли нет
+        new_role = Role(name="admin")
+        db.add(new_role)
+        db.commit()
+        db.refresh(new_role)
+        return new_role.id
+    finally:
+        db.close()
+
+
+
+@app.get("/admin_management", response_class=HTMLResponse)
+def admin_page(request: Request):
+    return templates.TemplateResponse("admin_management.html", {"request": request})
+
+
+@app.get("/api/get_admins")
+def get_admins(db: Session = Depends(get_db)):
+    admins = db.query(User).join(Role).filter(Role.name == "admin").all()
+    result = []
+    for u in admins:
+        # добавляем поле "field" если оно есть, иначе None
+        field_name = getattr(u, "field", None)
+        result.append({
+            "id": u.id,
+            "username": u.username,
+            "field": field_name
+        })
+    return result
+
+
+@app.post("/api/create_admin")
+async def create_admin(request: Request):
+    data = await request.json()
+    username = data.get("username")
+    password = data.get("password")
+
+    if not username or not password:
+        return JSONResponse({"error": "Все поля обязательны"}, status_code=400)
+
+    db = SessionLocal()
+    try:
+        # проверка уникальности
+        if db.query(User).filter(User.username == username).first():
+            return JSONResponse({"error": "Логин уже существует"}, status_code=400)
+
+        admin_role_id = get_admin_role_id()
+        hashed_password = generate_password_hash(password)
+
+        new_admin = User(
+            username=username,
+            password=hashed_password,
+            role_id=admin_role_id
+        )
+        db.add(new_admin)
+        db.commit()
+        db.refresh(new_admin)
+        return {"message": f"Админ {username} создан!"}
+    finally:
+        db.close()
+
+
+@app.put("/api/update_admin_inline/{admin_id}")
+async def update_admin_inline(admin_id: int, data: dict = Body(...)):
+    db = SessionLocal()
+    try:
+        admin = db.query(User).filter(User.id == admin_id).first()
+        if not admin:
+            return JSONResponse({"error": "Админ не найден"}, status_code=404)
+
+        if data.get("username"):
+            admin.username = data["username"]
+        if data.get("password"):
+            admin.password = generate_password_hash(data["password"])
+        if data.get("field_id"):
+            admin.field_id = data["field_id"]
+
+        db.commit()
+        return {"message": "Обновлено"}
+    finally:
+        db.close()
+
+
+@app.delete("/api/delete_admin/{admin_id}")
+async def delete_admin(admin_id: int):
+    db = SessionLocal()
+    try:
+        admin = db.query(User).filter(User.id == admin_id).first()
+        if not admin:
+            return JSONResponse({"error": "Админ не найден"}, status_code=404)
+        db.delete(admin)
+        db.commit()
+        return {"message": "Админ удален"}
+    finally:
+        db.close()
+
+@app.get("/api/customers")
+def get_customers(db: Session = Depends(get_db)):
+    customers = db.query(models.Customer).all()
+    return [{"id": c.id, "name": c.name} for c in customers]
 
 
 @app.post("/api/update_resident")
@@ -429,10 +564,3 @@ def update_resident(data: dict = Body(...), db: Session = Depends(get_db)):
         db.rollback()
         return JSONResponse(content={"status": "error", "detail": str(e)}, status_code=500)
     
-
-@app.get("/api/customers")
-def get_customers(db: Session = Depends(get_db)):
-    customers = db.query(models.Customer).all()
-    return [{"id": c.id, "name": c.name} for c in customers]
-
-

@@ -19,8 +19,10 @@ class User(Base):
     username = Column(String, unique=True, nullable=False)
     password = Column(String, nullable=False)
     role_id = Column(Integer, ForeignKey("roles.id"))
+    field_id = Column(Integer, ForeignKey("fields.id"))
 
     role = relationship("Role", back_populates="users")
+    field = relationship("Field")
 
 
 class Field(Base):
