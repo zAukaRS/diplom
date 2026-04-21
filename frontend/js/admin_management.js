@@ -140,3 +140,12 @@ async function saveAdmin(row, id) {
         alert("Ошибка сервера!");
     }
 }
+
+fetch("/api/current_user")
+    .then(res => res.json())
+    .then(user => {
+        if(user.role !== "admin"){
+            document.getElementById("createAdminBtn").style.display = "none";
+            document.querySelectorAll(".admin-action-col").forEach(el => el.style.display = "none");
+        }
+    });

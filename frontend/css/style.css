@@ -148,15 +148,15 @@ tr:hover {
 
 .day-select:focus,
 .day-select:hover {
-    outline: 2px solid #6a5acd; /* фиолетовая рамка */
+    outline: 2px solid #6a5acd;
     background-color: #f0f0ff;
 }
 
 .day-select.drag-highlight {
-    background-color: #cce5ff; /* светло-синий фон для подсветки */
+    background-color: #cce5ff;
 }
 .day-select {
-    padding: 2px 4px; /* чтобы select был компактнее */
+    padding: 2px 4px;
     font-size: 12px;
     min-width: 70px;
 }
@@ -190,18 +190,19 @@ tr:hover {
 }
 
 .btn-compact {
-    padding: 4px 10px;
-    border-radius: 8px;
+    padding: 8px 15px;
+    border-radius: 6px;
     border: none;
-    background-color: #8a2be2;
+    background-color: #2563eb;
     color: white;
     font-size: 0.9rem;
     cursor: pointer;
     transition: all 0.2s ease;
 }
 
+
 .btn-compact:hover {
-    background-color: #6f1fb0;
+    background-color: #2563eb;
 }
 
 td select.day-select {
@@ -221,4 +222,66 @@ td select.day-select:focus {
     outline: none;
     border-color: #8a2be2;
     box-shadow: 0 0 3px rgba(138, 43, 226, 0.5);
+}
+
+
+body.dark-theme {
+    background-color: #1e1e1e;
+    color: #ddd;
+}
+
+body.dark-theme .sidebar {
+    background-color: #2c2c2c;
+    color: #ddd;
+}
+
+body.dark-theme .card {
+    background-color: #2c2c2c;
+    color: #fff;
+}
+
+body.dark-theme table {
+    background-color: #2c2c2c;
+    color: #ddd;
+}
+
+body.dark-theme th {
+    background-color: #3a3a3a;
+}
+
+body.dark-theme td select.day-select {
+    background-color: #3a3a3a;
+    color: #ddd;
+    border-color: #555;
+}
+
+body.dark-theme .btn-compact {
+    background-color: #2563eb;
+    color: #fff;
+}
+
+body {
+    transition: background-color 0.3s, color 0.3s;
+}
+
+.blackButton {
+    padding: 4px 10px;
+    border-radius: 8px;
+    border: none;
+    background-color: #8a2be2;
+    color: white;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.stardartButton {
+    padding: 8px 15px;
+    border-radius: 6px;
+    border: none;
+    background-color: #2563eb;
+    color: white;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
 }

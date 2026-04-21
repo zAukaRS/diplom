@@ -264,7 +264,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 function toggleEditMode() {
     editMode = !editMode;
     const btn = document.getElementById("editModeBtn");
-    btn.textContent = editMode ? "✅ Выйти из редактирования" : "✏️ Режим редактирования";
+    btn.textContent = editMode ? "Выйти из редактирования" : "Режим редактирования";
     btn.style.background = editMode ? "#4CAF50" : "";
     btn.style.color = editMode ? "white" : "";
 
@@ -553,3 +553,21 @@ function initDragFill() {
         dragMode = null;
     });
 }
+
+const themeToggleBtn = document.getElementById("themeToggleBtn");
+
+if (localStorage.getItem("theme") === "dark") {
+    document.body.classList.add("dark-theme");
+}
+
+themeToggleBtn.addEventListener("click", () => {
+    document.body.classList.toggle("dark-theme");
+
+    if (document.body.classList.contains("dark-theme")) {
+        localStorage.setItem("theme", "dark");
+        themeToggleBtn.textContent = "Светлая тема";
+    } else {
+        localStorage.setItem("theme", "light");
+        themeToggleBtn.textContent = "Тёмная тема";
+    }
+});

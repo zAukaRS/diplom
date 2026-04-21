@@ -12,12 +12,12 @@
     <aside class="sidebar">
         <h2>Админ-панель</h2>
         <ul>
-            <li>🏠 Главная</li>
-            <li>📊 Отчёты</li>
-            <li>🛏 Комнаты</li>
-            <li>🏢 Общежития</li>
-            <li><a href="/admin_management">👤 Управление админами</a></li>
-            <li><a href="/logout">🚪 Выход</a></li>
+            <li>Главная</li>
+            <li>Отчёты</li>
+            <li>Комнаты</li>
+            <li>Общежития</li>
+            <li><a href="/admin_management">Управление админами</a></li>
+            <li><a href="/logout">Выход</a></li>
         </ul>
     </aside>
     <div class="main-content">
@@ -83,11 +83,11 @@
 
             <div class="table-header">
                 <h2>Отчёт по проживающим</h2>
-                <button id="editModeBtn" onclick="toggleEditMode()">✏️ Режим редактирования</button>
-                <button id="addResidentBtn">Добавить запись</button>
+                <button id="editModeBtn" onclick="toggleEditMode()" class="stardartButton">Режим редактирования</button>
+                <button id="addResidentBtn" class="stardartButton">Добавить запись</button>
                 <form id="uploadForm" enctype="multipart/form-data">
                     <input type="file" id="excelFile" accept=".xlsx,.xls">
-                    <button type="submit">Загрузить Excel</button>
+                    <button type="submit" class="stardartButton">Загрузить Excel</button>
                 </form>
             </div>
 

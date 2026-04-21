@@ -29,6 +29,7 @@ from .utils import get_admin_role_id
 
 from sqlalchemy.orm import joinedload
 from sqlalchemy import or_
+from fastapi import Depends, HTTPException
 
 
 # uvicorn app.main:app --reload
@@ -41,6 +42,22 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 
 app.mount("/css", StaticFiles(directory=FRONTEND_DIR / "css"), name="css")
 app.mount("/js", StaticFiles(directory=FRONTEND_DIR / "js"), name="js")
+
+def get_current_user(request: Request, db: Session = Depends(get_db)):
+    session_username = request.cookies.get("session")
+    if not session_username:
+        raise HTTPException(status_code=401, detail="Не авторизован")
+
+    user = db.query(User).filter(User.username == session_username).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Пользователь не найден")
+    return user
+
+
+def admin_only(user: User = Depends(get_current_user)):
+    if user.role.name != "admin":
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+    return user
 
 
 
@@ -55,12 +72,17 @@ fake_users = {"admin": "Password1"}
 async def login(username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == username).first()
 
-    if not user:
+    if not user or not check_password_hash(user.password, password):
         return HTMLResponse("<h3>Неверный логин или пароль</h3><a href='/login'>Назад</a>")
-    if check_password_hash(user.password, password):
-        return RedirectResponse(url="/home", status_code=303)
-    else:
-        return HTMLResponse("<h3>Неверный логин или пароль</h3><a href='/login'>Назад</a>")
+
+    response = RedirectResponse(url="/home", status_code=303)
+    response.set_cookie(
+        key="session",
+        value=user.username,
+        httponly=True,
+        max_age=3600
+    )
+    return response
 
 # Главная страница
 @app.get("/home", response_class=HTMLResponse)
@@ -492,14 +514,18 @@ app.mount("/js", StaticFiles(directory=FRONTEND_DIR / "js"), name="js")
 
 templates = Jinja2Templates(directory=FRONTEND_DIR)
 
+@app.get("/api/current_user")
+def current_user(user: User = Depends(get_current_user)):
+    return {"username": user.username, "role": user.role.name}
+
 
 @app.get("/admin_management", response_class=HTMLResponse)
-def admin_page(request: Request):
+def admin_page(request: Request, user: User = Depends(admin_only)):
     return templates.TemplateResponse("admin_management.html", {"request": request})
 
 
 @app.get("/api/get_admins")
-def get_admins(db: Session = Depends(get_db)):
+def get_admins(db: Session = Depends(get_db), user: User = Depends(admin_only)):
     admins = db.query(User).join(Role).filter(Role.name == "admin").all()
     result = []
     for u in admins:
@@ -514,7 +540,7 @@ def get_admins(db: Session = Depends(get_db)):
 
 
 @app.post("/api/create_admin")
-async def create_admin(request: Request):
+async def create_admin(request: Request, user: User = Depends(admin_only)):
     data = await request.json()
     username = data.get("username")
     password = data.get("password")
@@ -609,4 +635,3 @@ def get_customers(db: Session = Depends(get_db)):
     return [{"id": c.id, "name": c.name} for c in customers]
 
     
-
