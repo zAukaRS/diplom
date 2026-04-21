@@ -49,7 +49,7 @@ class Resident(Base):
 
     id = Column(Integer, primary_key=True)
     room_id = Column(Integer, ForeignKey("rooms.id"))
-    room = relationship("Room")  # связь к комнате
+    room = relationship("Room",foreign_keys=[room_id])  # связь к комнате
     field_id = Column(Integer, ForeignKey("fields.id"))
     customer_id = Column(Integer, ForeignKey("customers.id"))
 

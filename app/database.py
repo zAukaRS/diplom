@@ -3,7 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from fastapi import Depends
 
-SQLALCHEMY_DATABASE_URL = "postgresql://postgres:dead10dead@localhost/dormitory_db"
+SQLALCHEMY_DATABASE_URL = "postgresql://postgres:postgres@localhost/postgres"
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 
