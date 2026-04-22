@@ -229,30 +229,39 @@ async def update_day(data: dict = Body(...), db: AsyncSession = Depends(get_db))
 
 
 
+
 @app.get("/api/residents")
 async def get_residents(
     word: Optional[str] = None, 
     by_field: Optional[str] = None, 
     db: AsyncSession = Depends(get_db)
 ):
-    # Базовый запрос со всеми связями
+    
+    
     query = select(models.Resident).options(
-        selectinload(models.Resident.field),  # ← selectinload вместо joinedload для async
+        selectinload(models.Resident.field),
         selectinload(models.Resident.customer),
         selectinload(models.Resident.room).selectinload(models.Room.location),
-        selectinload(models.Resident.room)
-        .selectinload(models.Room.path),
-        selectinload(models.Resident.resident_days)  # ← загружаем дни проживания
+        selectinload(models.Resident.room).selectinload(models.Room.path),
+        selectinload(models.Resident.resident_days)
     )
     
-    # Фильтр по полю (название сферы деятельности)
-    if by_field:
-        query = query.join(models.Field).where(models.Field.name.ilike(f"{by_field}%"))
+    # Фильтр по ID месторождения
+    if by_field and by_field.strip():
+        try:
+            field_id = int(by_field)
+            query = query.where(models.Resident.field_id == field_id)
+            print(f"  Фильтр по field_id: {field_id}")
+        except ValueError:
+            pass
     
     # Фильтр по поисковому слову
     if word:
-        word_lower = word.lower()
-        query = query.join(models.Room).join(models.Location).join(models.Customer).where(
+        word_lower = word.lower().strip()
+        query = query.outerjoin(models.Room)\
+                     .outerjoin(models.Location)\
+                     .outerjoin(models.Customer)\
+                     .where(
             or_(
                 models.Resident.full_name.ilike(f"%{word_lower}%"),
                 models.Resident.position.ilike(f"%{word_lower}%"),
@@ -261,14 +270,16 @@ async def get_residents(
                 models.Customer.name.ilike(f"%{word_lower}%")
             )
         )
+
     
     # Выполняем запрос
     result = await db.execute(query)
-    residents = result.scalars().unique().all()  # ← unique() важно при использовании joins
+    residents = result.scalars().unique().all()
     
-    # Если ничего не найдено
+   
+    
     if not residents:
-        return {"error": "Ничего не нашлось"}
+        return []
     
     # Формируем ответ
     response = []
@@ -276,7 +287,6 @@ async def get_residents(
         room = r.room
         location = room.location if room else None
         
-        # Дни проживания
         days_info = {}
         for rd in r.resident_days:
             days_info[rd.date.day] = rd.workplace_id
@@ -290,13 +300,14 @@ async def get_residents(
             "room_number": room.room_number if room else "",
             "room_location": location.name if location else "",
             "room_path": room.path.description if room and room.path else "",
+            "room_capacity": "",
             "field": r.field.name if r.field else "",
             "customer": r.customer.name if r.customer else "",
             "days_info": days_info
         })
     
+    
     return response
-
 @app.post("/api/add_resident")
 async def add_resident(data: dict = Body(...), db: AsyncSession = Depends(get_db)):
     try:
@@ -387,6 +398,8 @@ async def upload_excel(file: UploadFile = File(...), db: AsyncSession = Depends(
 
     await db.commit()
     return {"message": "Данные успешно загружены"}
+
+
 
 
 @app.get('/api/get_report')
@@ -487,7 +500,7 @@ async def create_admin(request: Request, user: User = Depends(admin_only), db : 
     if res.scalars().first():
         return JSONResponse({"error": "Логин уже существует"}, status_code=400)
 
-    admin_role_id = get_admin_role_id()
+    admin_role_id = await get_admin_role_id(db)
     hashed_password = generate_password_hash(password)
 
     new_admin = models.User(

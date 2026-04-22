@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 from sqlalchemy import select
 
-async def get_admin_role_id(db : AsyncSession = Depends(get_db)):
+async def get_admin_role_id(db : AsyncSession):
     try:
         res = await db.execute(select(Role).where(Role.name == "admin"))
         role = res.scalars().first()

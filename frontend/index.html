@@ -20,10 +20,12 @@
             <li><a href="/logout">Выход</a></li>
         </ul>
     </aside>
+    
     <div class="main-content">
         <header>
             <h1>Система управления общежитиями</h1>
         </header>
+        
         <section class="cards">
             <div class="card">
                 <h2>72%</h2>
@@ -56,14 +58,19 @@
 
         <section class="table-section">
             <div class="filters compact">
+                <!-- Поиск по слову -->
+                <input type="text" id="searchWord" placeholder="Поиск по ФИО, должности..." class="filter-select">
+                
                 <select id="fieldFilter" class="filter-select">
                     <option value="">Месторождение</option>
                 </select>
+            
                 <select id="yearFilter" class="filter-select">
                     <option value="2024">2024</option>
                     <option value="2025" selected>2025</option>
                     <option value="2026">2026</option>
                 </select>
+                
                 <select id="monthFilter" class="filter-select">
                     <option value="1">Янв</option>
                     <option value="2">Фев</option>
@@ -78,7 +85,11 @@
                     <option value="11">Ноя</option>
                     <option value="12">Дек</option>
                 </select>
+                
+                <!-- Кнопки -->
                 <button onclick="loadCalendar()" class="btn-compact">Показать</button>
+                <button onclick="searchResidents()" class="btn-compact">🔍 Поиск</button>
+                <button onclick="clearSearch()" class="btn-compact">✖ Сброс</button>
             </div>
 
             <div class="table-header">
@@ -91,7 +102,6 @@
                 </form>
             </div>
 
-
             <table>
                 <thead id="calendarHead"></thead>
                 <tbody id="calendarBody"></tbody>
@@ -99,6 +109,7 @@
         </section>
     </div>
 </div>
+
 <script src="js/app.js"></script>
 </body>
 </html>
