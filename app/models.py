@@ -19,7 +19,7 @@ class User(Base):
     username = Column(String, unique=True, nullable=False)
     password = Column(String, nullable=False)
     role_id = Column(Integer, ForeignKey("roles.id"))
-    field_id = Column(Integer, ForeignKey("fields.id"))
+    field_id = Column(Integer, ForeignKey("fields.id"),nullable=True)
 
     role = relationship("Role", back_populates="users")
     field = relationship("Field")
@@ -76,7 +76,7 @@ class ResidentDay(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     resident_id = Column(Integer, ForeignKey("residents.id"))
-    room_id = Column(Integer, ForeignKey("rooms.id"))
+    room_id = Column(Integer, ForeignKey("rooms.id"),nullable=True)
     date = Column(Date)
     extra = Column(String, nullable=True)
     workplace_id = Column(Integer, ForeignKey("workplaces.id"), nullable=True)

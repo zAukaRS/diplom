@@ -310,6 +310,8 @@ function downloadReport() {
     const dateFrom = document.getElementById("dateFrom").value;
     const dateTo = document.getElementById("dateTo").value;
 
+    console.log("dateFrom:", dateFrom, "dateTo:", dateTo);  // ← для отладки
+
     if (!dateFrom || !dateTo) {
         alert("Выберите обе даты!");
         return;
@@ -320,7 +322,11 @@ function downloadReport() {
         return;
     }
 
-    window.open(`/api/get_report?date_in=${dateFrom}&date_out=${dateTo}`, "_blank");
+    // Формируем URL с параметрами
+    const url = `/api/get_report?date_in=${dateFrom}&date_out=${dateTo}`;
+    console.log("Запрос:", url);  // ← для отладки
+    
+    window.open(url, "_blank");
 }
 
 // ===== ЗАГРУЗКА ДАННЫХ =====
