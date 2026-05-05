@@ -2,24 +2,12 @@
 let editMode = false;
 let dragStart = null;
 let dragMode = null;
-let workplaces = [];
-
 const GENDER_OPTIONS = ["", "М", "Ж"];
 const SHIFT_OPTIONS = ["", "дневная", "ночная"];
 const POSITION_OPTIONS = ["", "Пекарь", "Повар", "Слесарь-ремонтник", "Инженер", "Техник", "Механик", "Электрик", "Оператор", "Мастер", "Рабочий"];
 let customers = [];
 
 // ===== ЗАГРУЗКА ДАННЫХ =====
-
-async function loadWorkplaces() {
-    try {
-        const res = await fetch("/api/workplaces");
-        workplaces = await res.json();
-    } catch (err) {
-        console.error("Ошибка загрузки workplaces:", err);
-        workplaces = [];
-    }
-}
 
 async function loadCustomers() {
     try {
@@ -83,7 +71,7 @@ function generateCalendar(days) {
     head.innerHTML = row;
 }
 
-// ===== ГЛАВНЫЕ ФУНКЦИИ (ВЫЗЫВАЮТСЯ ИЗ HTML) =====
+// ===== ГЛАВНЫЕ ФУНКЦИИ =====
 
 function searchResidents() {
     console.log("searchResidents вызвана!");
@@ -137,7 +125,6 @@ function toggleEditMode() {
 async function loadCalendar() {
     console.log("loadCalendar вызвана!");
     
-    await loadWorkplaces();
     await loadCustomers();
     
     const fieldSelect = document.getElementById("fieldFilter");
@@ -228,9 +215,9 @@ async function loadCalendar() {
                 select.className = "day-select";
                 select.dataset.resident = r.id;
                 select.dataset.day = i;
-                select.title = "Выберите рабочее место";
+                select.title = "Выберите заказчика";
                 select.innerHTML = `<option value="">-</option>` +
-                    workplaces.map(w => `<option value="${w.id}" ${w.id == selectedId ? "selected" : ""}>${w.name}</option>`).join("");
+                    customers.map(c => `<option value="${c.id}" ${c.id == selectedId ? "selected" : ""}>${c.name}</option>`).join("");
                 td.appendChild(select);
                 row.appendChild(td);
             }
@@ -342,7 +329,7 @@ async function saveDay(selectEl) {
     const day = selectEl.dataset.day;
     const month = document.getElementById("monthFilter")?.value;
     const year = document.getElementById("yearFilter")?.value;
-    const workplaceId = selectEl.value ? parseInt(selectEl.value) : null;
+    const customerId = selectEl.value ? parseInt(selectEl.value) : null;
 
     if (!residentId || !day || !month || !year) return;
 
@@ -355,39 +342,13 @@ async function saveDay(selectEl) {
                 day: parseInt(day), 
                 month: parseInt(month), 
                 year: parseInt(year), 
-                workplace_id: workplaceId 
+                customer_id: customerId 
             })
         });
     } catch (err) {
         console.error("Ошибка при сохранении дня:", err);
     }
 }
-
-// ===== ИНИЦИАЛИЗАЦИЯ ПРИ ЗАГРУЗКЕ =====
-
-document.addEventListener("DOMContentLoaded", async function () {
-    console.log("DOM загружен!");
-    
-    await loadFields();
-    await loadWorkplaces();
-    await loadCustomers();
-    
-    const now = new Date();
-    const monthEl = document.getElementById("monthFilter");
-    const yearEl = document.getElementById("yearFilter");
-    if (monthEl) monthEl.value = now.getMonth() + 1;
-    if (yearEl) yearEl.value = now.getFullYear();
-    
-    const addBtn = document.getElementById("addResidentBtn");
-    if (addBtn) {
-        addBtn.addEventListener("click", function () {
-            addNewRow();
-        });
-    }
-    
-    // Загружаем данные сразу
-    await loadCalendar();
-});
 
 // ===== ДОБАВЛЕНИЕ НОВОГО РЕЗИДЕНТА =====
 
@@ -496,7 +457,7 @@ function addNewRow() {
         select.className = "day-select-new";
         select.dataset.day = i;
         select.innerHTML = `<option value="">-</option>` +
-            workplaces.map(w => `<option value="${w.id}">${w.name}</option>`).join("");
+            customers.map(c => `<option value="${c.id}">${c.name}</option>`).join("");
         td.appendChild(select);
         row.appendChild(td);
     }
@@ -558,7 +519,7 @@ async function saveNewRow(row, month, year) {
                             day: parseInt(sel.dataset.day),
                             month,
                             year,
-                            workplace_id: parseInt(sel.value)
+                            customer_id: parseInt(sel.value)
                         })
                     });
                 }
@@ -573,6 +534,75 @@ async function saveNewRow(row, month, year) {
     }
 }
 
+// ===== ЗАГРУЗКА EXCEL ФАЙЛА =====
+
+async function uploadExcel() {
+    console.log("🔵 Загрузка Excel началась!");
+    
+    const fileInput = document.getElementById("excelFile");
+    if (!fileInput) {
+        alert("Элемент выбора файла не найден!");
+        return;
+    }
+    
+    const file = fileInput.files[0];
+    if (!file) {
+        alert("Выберите файл!");
+        return;
+    }
+    
+    console.log(`📁 Выбран файл: ${file.name}, размер: ${file.size} байт`);
+    
+    const formData = new FormData();
+    formData.append("file", file);
+    
+    try {
+        console.log("📤 Отправляю запрос на /api/upload_excel...");
+        
+        const response = await fetch("/api/upload_excel", {
+            method: "POST",
+            body: formData
+        });
+        
+        console.log(`📥 Статус ответа: ${response.status}`);
+        
+        // Получаем текст ответа
+        const responseText = await response.text();
+        console.log(`📄 Тело ответа: ${responseText}`);
+        
+        if (!responseText) {
+            alert("Сервер вернул пустой ответ!");
+            return;
+        }
+        
+        // Парсим JSON
+        let result;
+        try {
+            result = JSON.parse(responseText);
+            console.log("📦 Распарсенный JSON:", result);
+        } catch (e) {
+            console.error("❌ Ответ не является JSON:", responseText);
+            alert("Ошибка формата ответа от сервера!");
+            return;
+        }
+        
+        // Проверяем результат
+        if (response.ok && result.message) {
+            alert("✅ " + result.message);
+            fileInput.value = "";
+            loadCalendar();
+        } else if (result.error) {
+            alert("❌ Ошибка: " + result.error);
+        } else {
+            alert("⚠️ Неизвестный ответ от сервера");
+        }
+        
+    } catch (err) {
+        console.error("💥 Критическая ошибка:", err);
+        alert("Ошибка загрузки: " + err.message);
+    }
+}
+
 // ===== ОБРАБОТЧИКИ СОБЫТИЙ =====
 
 document.addEventListener("change", async (e) => {
@@ -583,7 +613,7 @@ document.addEventListener("change", async (e) => {
         const day = e.target.dataset.day;
         const month = document.getElementById("monthFilter")?.value;
         const year = document.getElementById("yearFilter")?.value;
-        const workplaceId = e.target.value ? parseInt(e.target.value) : null;
+        const customerId = e.target.value ? parseInt(e.target.value) : null;
 
         if (!day || !month || !year) return;
 
@@ -596,11 +626,44 @@ document.addEventListener("change", async (e) => {
                     day: parseInt(day), 
                     month: parseInt(month), 
                     year: parseInt(year), 
-                    workplace_id: workplaceId 
+                    customer_id: customerId 
                 })
             });
         } catch (err) {
             console.error("Ошибка:", err);
         }
     }
+});
+
+// ===== ИНИЦИАЛИЗАЦИЯ ПРИ ЗАГРУЗКЕ СТРАНИЦЫ =====
+
+document.addEventListener("DOMContentLoaded", async function () {
+    console.log("🚀 Страница загружена! Начинаю инициализацию...");
+    
+    
+    
+    
+    // Загружаем данные
+    await loadFields();
+    await loadCustomers();
+    
+    // Устанавливаем текущий месяц и год
+    const now = new Date();
+    const monthEl = document.getElementById("monthFilter");
+    const yearEl = document.getElementById("yearFilter");
+    if (monthEl) monthEl.value = now.getMonth() + 1;
+    if (yearEl) yearEl.value = now.getFullYear();
+    
+    // Кнопка добавления резидента
+    const addBtn = document.getElementById("addResidentBtn");
+    if (addBtn) {
+        addBtn.addEventListener("click", function () {
+            addNewRow();
+        });
+    }
+    
+    // Загружаем календарь
+    await loadCalendar();
+    
+    console.log("✅ Инициализация завершена!");
 });

@@ -96,10 +96,8 @@
                 <h2>Отчёт по проживающим</h2>
                 <button id="editModeBtn" onclick="toggleEditMode()" class="stardartButton">Режим редактирования</button>
                 <button id="addResidentBtn" class="stardartButton">Добавить запись</button>
-                <form id="uploadForm" enctype="multipart/form-data">
-                    <input type="file" id="excelFile" accept=".xlsx,.xls">
-                    <button type="submit" class="stardartButton">Загрузить Excel</button>
-                </form>
+                <input type="file" id="excelFile" accept=".xlsx,.xls" style="display:inline-block; margin-right:10px;">
+                <button onclick="uploadExcel()" class="stardartButton" type="button">Загрузить Excel</button>
             </div>
 
             <table>
@@ -113,3 +111,20 @@
 <script src="js/app.js"></script>
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
