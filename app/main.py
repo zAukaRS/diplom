@@ -3,8 +3,10 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from starlette.templating import Jinja2Templates
-from werkzeug.security import generate_password_hash
 from .utils import get_admin_role_id
+from .core.security import get_password_hash
+from .core.dependencies import get_current_user
+from .routers import auth, users
 from sqlalchemy.orm import selectinload 
 from sqlalchemy import text, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +21,6 @@ import os
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-from werkzeug.security import check_password_hash
 from typing import Dict, List, Optional
 from .models import User, Role
 from sqlalchemy.orm import joinedload
@@ -27,13 +28,17 @@ from sqlalchemy import text, and_, or_, select, func, desc, extract, and_
 from fastapi import Depends, HTTPException
 import io
 from .excel_parser import parse_all_months
-# from .routers import auth, users
+# from .routers import auth, users  # уже импортировано выше
+
+
+
 
 
 # uvicorn app.main:app --reload
 
 app = FastAPI()
-
+app.include_router(auth.router)
+app.include_router(users.router)
 
 BASE_DIR = Path(__file__).parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
@@ -105,19 +110,11 @@ def create_report(dict_list: list, output_filename: str, sheet_name='расч.л
     wb.save(filepath)
     return filepath
 
-async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)):
-    session_username = request.cookies.get("session")
-    if not session_username:
-        raise HTTPException(status_code=401, detail="Не авторизован")
-    res = await db.execute(select(models.User).where(models.User.username == session_username))
-    user = res.scalars().first()
-    if not user:
-        raise HTTPException(status_code=401, detail="Пользователь не найден")
-    return user
 
 
+# get_current_user теперь из .core.dependencies (JWT Bearer)
 
-def admin_only(user: models.User = Depends(get_current_user)):
+async def admin_only(user: models.User = Depends(get_current_user)):
     if user.role.name != "admin":
         raise HTTPException(status_code=403, detail="Доступ запрещён")
     return user
@@ -159,25 +156,10 @@ def search(word : str, data : list):
 async def login_page():
     return HTMLResponse((FRONTEND_DIR / "login.html").read_text(encoding="utf-8"))
 
-fake_users = {"admin": "Password1"}
 
-@app.post("/login")
-async def login(username: str = Form(...), password: str = Form(...), db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(models.User).where(models.User.username == username))
-    user = res.scalars().first()
-    
-    if not user or not check_password_hash(user.password, password):
-        return HTMLResponse("<h3>Неверный логин или пароль</h3><a href='/login'>Назад</a>")
+# POST /login и /logout заменены роутером /api/auth/login и /api/auth/refresh
 
-    response = RedirectResponse(url="/home", status_code=303)
-    response.set_cookie(
-        key="session",
-        value=user.username,
-        httponly=True,
-        max_age=3600
-    )
-    print('131231231231231313123')
-    return response
+
 
 # Главная страница
 @app.get("/home", response_class=HTMLResponse)
@@ -189,13 +171,6 @@ def home():
 def root():
     return RedirectResponse(url="/login")
 
-
-# Страница выхода (logout)
-@app.get("/logout")
-def logout():
-    response = RedirectResponse(url="/login")
-    response.delete_cookie(key="session")
-    return response
 
 
 @app.post("/api/update_day")
@@ -619,7 +594,7 @@ async def create_admin(request: Request, user: User = Depends(admin_only), db : 
         return JSONResponse({"error": "Логин уже существует"}, status_code=400)
 
     admin_role_id = await get_admin_role_id(db)
-    hashed_password = generate_password_hash(password)
+    hashed_password = get_password_hash(password)
 
     new_admin = models.User(
         username=username,
@@ -651,7 +626,7 @@ async def update_admin_inline(admin_id: int, data: dict = Body(...), db : AsyncS
         if data.get("username"):
             admin.username = data["username"]
         if data.get("password"):
-            admin.password = generate_password_hash(data["password"])
+            admin.password = get_password_hash(data["password"])
         if data.get("field_id"):
             admin.field_id = data["field_id"]
 

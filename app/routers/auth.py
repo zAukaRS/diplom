@@ -1,17 +1,24 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel
 from ..database import get_db
 from sqlalchemy import select
 from ..models import User
 from ..schemas.token import Token
-from ..core.security import verify_password, create_access_token, create_refresh_token,get_password_hash, decode_token
+from ..core.security import verify_password, create_access_token, create_refresh_token, get_password_hash, decode_token
 
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 
-@router.post("/register", response_model=User)
-async def register(user_data: User, db: AsyncSession = Depends(get_db)):
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+
+
+@router.post("/register")
+async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
     """Регистрация нового пользователя"""
     res = await db.execute(select(User).where(User.username == user_data.username))
     existing_user = res.scalars().first()
@@ -24,13 +31,13 @@ async def register(user_data: User, db: AsyncSession = Depends(get_db)):
     hashed_password = get_password_hash(user_data.password)
     new_user = User(
         username=user_data.username,
-        hashed_password=hashed_password,
+        password=hashed_password,
         role_id=2
     )
     db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return new_user
+    await db.commit()
+    await db.refresh(new_user)
+    return {"message": f"Пользователь {new_user.username} создан", "id": new_user.id}
 
 @router.post("/login", response_model=Token)
 async def login(
@@ -43,7 +50,7 @@ async def login(
     """
     res = await db.execute(select(User).where(User.username == form_data.username))
     user = res.scalars().first()
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    if not user or not verify_password(form_data.password, user.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect login or password",

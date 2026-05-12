@@ -1,3 +1,68 @@
+// ===== JWT АВТОРИЗАЦИЯ =====
+
+function getToken() {
+    return localStorage.getItem("access_token");
+}
+
+function setTokens(access, refresh) {
+    localStorage.setItem("access_token", access);
+    localStorage.setItem("refresh_token", refresh);
+}
+
+function clearTokens() {
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+}
+
+async function refreshAccessToken() {
+    const refresh = localStorage.getItem("refresh_token");
+    if (!refresh) return false;
+    try {
+        const res = await fetch("/api/auth/refresh", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refresh_token: refresh })
+        });
+        if (!res.ok) return false;
+        const data = await res.json();
+        setTokens(data.access_token, data.refresh_token);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+// Обёртка над fetch: автоматически добавляет Bearer-токен.
+// При 401 пробует обновить токен один раз, при неудаче — редирект на /login.
+async function apiFetch(url, options = {}) {
+    const token = getToken();
+    const headers = {
+        ...(options.headers || {}),
+        ...(token ? { "Authorization": `Bearer ${token}` } : {})
+    };
+
+    let response = await fetch(url, { ...options, headers });
+
+    if (response.status === 401) {
+        const refreshed = await refreshAccessToken();
+        if (refreshed) {
+            headers["Authorization"] = `Bearer ${getToken()}`;
+            response = await fetch(url, { ...options, headers });
+        } else {
+            clearTokens();
+            window.location.href = "/login";
+            return null;
+        }
+    }
+
+    return response;
+}
+
+function logout() {
+    clearTokens();
+    window.location.href = "/login";
+}
+
 // ===== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =====
 let editMode = false;
 let dragStart = null;
@@ -11,7 +76,7 @@ let customers = [];
 
 async function loadCustomers() {
     try {
-        const res = await fetch("/api/customers");
+        const res = await apiFetch("/api/customers");
         customers = await res.json();
     } catch (err) {
         console.error("Ошибка загрузки customers:", err);
@@ -21,7 +86,7 @@ async function loadCustomers() {
 
 async function loadFields() {
     try {
-        const response = await fetch("/api/fields");
+        const response = await apiFetch("/api/fields");
         const data = await response.json();
         const select = document.getElementById("fieldFilter");
         if (select) {
@@ -145,7 +210,8 @@ async function loadCalendar() {
     console.log("Запрос:", url);
 
     try {
-        const response = await fetch(url);
+        const response = await apiFetch(url);
+        if (!response) return; // 401 → редирект уже произошёл в apiFetch
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -252,7 +318,7 @@ function makeEditSelect(options, currentValue, residentId, field) {
 
     select.addEventListener("change", async () => {
         try {
-            const response = await fetch("/api/update_resident", {
+            const response = await apiFetch("/api/update_resident", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ id: residentId, [field]: select.value })
@@ -334,7 +400,7 @@ async function saveDay(selectEl) {
     if (!residentId || !day || !month || !year) return;
 
     try {
-        await fetch("/api/update_day", {
+        await apiFetch("/api/update_day", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ 
@@ -349,7 +415,6 @@ async function saveDay(selectEl) {
         console.error("Ошибка при сохранении дня:", err);
     }
 }
-
 // ===== ДОБАВЛЕНИЕ НОВОГО РЕЗИДЕНТА =====
 
 function makeEditSelectNew(options, field) {
@@ -494,7 +559,7 @@ async function saveNewRow(row, month, year) {
     };
 
     try {
-        const response = await fetch("/api/add_resident", {
+        const response = await apiFetch("/api/add_resident", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(data)
@@ -511,7 +576,7 @@ async function saveNewRow(row, month, year) {
             const daySelects = row.querySelectorAll(".day-select-new");
             for (const sel of daySelects) {
                 if (sel.value) {
-                    await fetch("/api/update_day", {
+                    await apiFetch("/api/update_day", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
@@ -559,7 +624,7 @@ async function uploadExcel() {
     try {
         console.log("📤 Отправляю запрос на /api/upload_excel...");
         
-        const response = await fetch("/api/upload_excel", {
+        const response = await apiFetch("/api/upload_excel", {
             method: "POST",
             body: formData
         });
@@ -618,7 +683,7 @@ document.addEventListener("change", async (e) => {
         if (!day || !month || !year) return;
 
         try {
-            await fetch("/api/update_day", {
+            await apiFetch("/api/update_day", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ 
@@ -639,6 +704,12 @@ document.addEventListener("change", async (e) => {
 
 document.addEventListener("DOMContentLoaded", async function () {
     console.log("🚀 Страница загружена! Начинаю инициализацию...");
+
+    // Проверяем наличие токена — если нет, идём на логин
+    if (!getToken()) {
+        window.location.href = "/login";
+        return;
+    }
     
     
     
@@ -667,21 +738,3 @@ document.addEventListener("DOMContentLoaded", async function () {
     
     console.log("✅ Инициализация завершена!");
 });
-// В login.html добавить скрипт:
-async function handleLogin(e) {
-    e.preventDefault();
-    const form = new FormData(e.target);
-    const res = await fetch("/api/auth/login", {
-        method: "POST",
-        // OAuth2PasswordRequestForm ожидает form-data, не JSON
-        body: new URLSearchParams({
-            username: form.get("username"),
-            password: form.get("password")
-        })
-    });
-    if (!res.ok) { alert("Неверный логин или пароль"); return; }
-    const data = await res.json();
-    localStorage.setItem("access_token", data.access_token);
-    localStorage.setItem("refresh_token", data.refresh_token);
-    window.location.href = "/home";
-}
