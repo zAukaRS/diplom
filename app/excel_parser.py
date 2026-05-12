@@ -165,24 +165,41 @@ def parse_sheet(
     ctx_path = ""
     ctx_room = ""
     ctx_seats = ""
-
-    for row_idx, row in enumerate(
+    ctx_room_unique = "" 
+    list_of_rooms = []
+    
+    for _, row in enumerate(
         sheet.iter_rows(min_row=2, max_row=sheet.max_row), start=2
     ):
         # --- ffill контекстных колонок ---
         def cv(col_0idx):
             v = row[col_0idx].value
             return str(v).strip() if v not in (None, "") else None
-
+        
         if cv(0):
             ctx_location = cv(0)
         if cv(1):
             ctx_path = cv(1)
         if cv(2):
+            list_of_rooms = []
             ctx_room = cv(2)
-        if cv(3):
+        if cv(3) and cv(2):
             ctx_seats = cv(3)
-
+            ctx_room_unique = cv(3) +'a'
+            list_of_rooms.append(ctx_room_unique)
+        elif cv(3):
+            ctx_seats = cv(3)
+            ctx_room_unique = cv(3)
+            if ctx_room_unique+'a' in list_of_rooms:
+                for x in 'bcdefg':
+                    if ctx_room_unique+x not in list_of_rooms:
+                        ctx_room_unique = ctx_room_unique + x
+                        list_of_rooms.append(ctx_room_unique)
+                        break
+            else:
+                ctx_room_unique = cv(3)+'a' 
+                list_of_rooms.append(ctx_room_unique)
+        
         fio_raw = cv(5)
         if not fio_raw:
             continue  # пустая строка
@@ -216,7 +233,7 @@ def parse_sheet(
                     "расположение": ctx_location,
                     "путь": ctx_path,
                     "комната": ctx_room,
-                    "мест": ctx_seats,
+                    "мест": ctx_seats[:-1],
                     "пол": cv(4) or "",
                     "смена": shift,
                     "full_name": name,
@@ -225,6 +242,7 @@ def parse_sheet(
                     "check_in": check_in,
                     "check_out": check_out,
                     "days": (check_out - check_in).days + 1,
+                    "room_unique_id" : ctx_room_unique
                 }
         else:
             # N имён ↔ N блоков
@@ -238,7 +256,7 @@ def parse_sheet(
                     "расположение": ctx_location,
                     "путь": ctx_path,
                     "комната": ctx_room,
-                    "мест": ctx_seats,
+                    "мест": ctx_seats[:-1],
                     "пол": cv(4),
                     "смена": shift,
                     "full_name": name,
@@ -247,6 +265,7 @@ def parse_sheet(
                     "check_in": check_in,
                     "check_out": check_out,
                     "days": (check_out - check_in).days + 1,
+                    "room_unique_id" : ctx_room_unique
                 }
 
 

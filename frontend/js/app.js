@@ -667,3 +667,21 @@ document.addEventListener("DOMContentLoaded", async function () {
     
     console.log("✅ Инициализация завершена!");
 });
+// В login.html добавить скрипт:
+async function handleLogin(e) {
+    e.preventDefault();
+    const form = new FormData(e.target);
+    const res = await fetch("/api/auth/login", {
+        method: "POST",
+        // OAuth2PasswordRequestForm ожидает form-data, не JSON
+        body: new URLSearchParams({
+            username: form.get("username"),
+            password: form.get("password")
+        })
+    });
+    if (!res.ok) { alert("Неверный логин или пароль"); return; }
+    const data = await res.json();
+    localStorage.setItem("access_token", data.access_token);
+    localStorage.setItem("refresh_token", data.refresh_token);
+    window.location.href = "/home";
+}

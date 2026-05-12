@@ -27,11 +27,10 @@ from sqlalchemy import text, and_, or_, select, func, desc, extract, and_
 from fastapi import Depends, HTTPException
 import io
 from .excel_parser import parse_all_months
-
+# from .routers import auth, users
 
 
 # uvicorn app.main:app --reload
-
 
 app = FastAPI()
 
@@ -42,6 +41,9 @@ templates = Jinja2Templates(directory=FRONTEND_DIR)
 
 app.mount("/css", StaticFiles(directory=FRONTEND_DIR / "css"), name="css")
 app.mount("/js", StaticFiles(directory=FRONTEND_DIR / "js"), name="js")
+
+# app.include_router(auth.router)
+# app.include_router(users.router)
 
 
 def create_report(dict_list: list, output_filename: str, sheet_name='расч.л'):
@@ -163,6 +165,7 @@ fake_users = {"admin": "Password1"}
 async def login(username: str = Form(...), password: str = Form(...), db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(models.User).where(models.User.username == username))
     user = res.scalars().first()
+    
     if not user or not check_password_hash(user.password, password):
         return HTMLResponse("<h3>Неверный логин или пароль</h3><a href='/login'>Назад</a>")
 
@@ -173,6 +176,7 @@ async def login(username: str = Form(...), password: str = Form(...), db: AsyncS
         httponly=True,
         max_age=3600
     )
+    print('131231231231231313123')
     return response
 
 # Главная страница
@@ -440,9 +444,10 @@ async def upload_excel(
                     db.add(obj)
                     await db.flush()
                 path_cache[path_desc] = obj.id
-
-            if room_name not in room_cache:
-                r = await db.execute(select(models.Room).where(models.Room.room_number == room_name))
+            room_uid = rec.get("room_unique_id") or ""
+            room_cache_key = room_name + room_uid
+            if room_cache_key not in room_cache:
+                r = await db.execute(select(models.Room).where(and_(models.Room.room_number == room_name,models.Room.room_unique_id == rec.get("room_unique_id"))))
                 obj = r.scalars().first()
                 if not obj:
                     try:
@@ -455,10 +460,11 @@ async def upload_excel(
                         field_id=field_id,
                         location_id=location_cache[location_name],
                         path_id=path_cache[path_desc],
+                        room_unique_id=room_uid or None
                     )
                     db.add(obj)
                     await db.flush()
-                room_cache[room_name] = obj.id
+                room_cache[room_cache_key] = obj.id
 
         # Коммитим справочники — все id теперь стабильны в БД
         await db.commit()
@@ -469,7 +475,9 @@ async def upload_excel(
         for rec in all_records:
             try:
                 customer_id = customer_cache[rec.get("customer") or "Неизвестно"]
-                room_id     = room_cache[rec.get("комната") or "—"]
+                room_uid = rec.get("room_unique_id") or ""
+                room_cache_key = (rec.get("комната") or "—") + room_uid
+                room_id = room_cache[room_cache_key]
 
                 gender_raw = rec.get("пол", "")
                 gender = "М" if isinstance(gender_raw, str) and gender_raw.lower().startswith("муж") else "Ж"
@@ -501,7 +509,7 @@ async def upload_excel(
                 print(f"  ✓ [{total}] {rec['full_name']} {rec['check_in']} → {rec['check_out']}", flush=True)
 
             except Exception as e:
-                await db.rollback()  # только этот жилец, справочники живы
+                await db.rollback()  
                 errors.append({"record": rec.get("full_name", "?"), "error": str(e)})
                 print(f"  ✗ Ошибка: {rec.get('full_name')}: {e}", flush=True)
 
@@ -597,7 +605,7 @@ async def get_admins(db: AsyncSession = Depends(get_db), user: User = Depends(ad
     return result
 
 @app.post("/api/create_admin")
-async def create_admin(request: Request, user: User = Depends(admin_only), db : AsyncSession = Depends(get_db)): ###############################################
+async def create_admin(request: Request, user: User = Depends(admin_only), db : AsyncSession = Depends(get_db)): 
     data = await request.json()
     username = data.get("username")
     password = data.get("password")
@@ -605,7 +613,7 @@ async def create_admin(request: Request, user: User = Depends(admin_only), db : 
     if not username or not password:
         return JSONResponse({"error": "Все поля обязательны"}, status_code=400)
 
-    # Я ТУТ ХЗ ЧТО ЭТО ЗА ПЕРЕМЕННАЯ Я ПЛОХО СДЕЛАЛ РАНЬШЕ БЫЛ Sessionlocal
+
     res = await db.execute(select(models.User).where(models.User.username == username))
     if res.scalars().first():
         return JSONResponse({"error": "Логин уже существует"}, status_code=400)

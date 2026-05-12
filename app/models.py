@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, ForeignKey, Date, Boolean
 from sqlalchemy.orm import relationship
 from .database import Base
 
+
 class Role(Base):
     __tablename__ = "roles"
 
@@ -42,7 +43,7 @@ class Customer(Base):
     name = Column(String)
 
     residents = relationship("Resident", back_populates="customer")
-    resident_days = relationship("ResidentDay", back_populates="customer")  # ✅ ОК
+    resident_days = relationship("ResidentDay", back_populates="customer")  
 
 class Resident(Base):
     __tablename__ = "residents"
@@ -78,8 +79,8 @@ class ResidentDay(Base):
     room_id = Column(Integer, ForeignKey("rooms.id"),nullable=True)
     date = Column(Date)
     extra = Column(Date, nullable=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)  # ❌ Было "customer.id"
-    customer = relationship("Customer", back_populates="resident_days")  # ✅ ОК
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True) 
+    customer = relationship("Customer", back_populates="resident_days")  
 
     resident = relationship("Resident", back_populates="resident_days")
     room = relationship("Room", back_populates="resident_days")
@@ -94,6 +95,8 @@ class Room(Base):
     capacity = Column(Integer, nullable=False)
     location_id = Column(Integer, ForeignKey("locations.id"))
     path_id = Column(Integer, ForeignKey("paths.id"))
+    room_unique_id = Column(String)
+
 
 
     field = relationship("Field", back_populates="rooms")
