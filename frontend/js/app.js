@@ -1,19 +1,13 @@
 // ===== JWT АВТОРИЗАЦИЯ =====
-
-function getToken() {
-    return localStorage.getItem("access_token");
-}
-
+function getToken() { return localStorage.getItem("access_token"); }
 function setTokens(access, refresh) {
     localStorage.setItem("access_token", access);
     localStorage.setItem("refresh_token", refresh);
 }
-
 function clearTokens() {
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
 }
-
 async function refreshAccessToken() {
     const refresh = localStorage.getItem("refresh_token");
     if (!refresh) return false;
@@ -27,42 +21,45 @@ async function refreshAccessToken() {
         const data = await res.json();
         setTokens(data.access_token, data.refresh_token);
         return true;
-    } catch {
-        return false;
-    }
+    } catch { return false; }
 }
-
-// Обёртка над fetch: автоматически добавляет Bearer-токен.
-// При 401 пробует обновить токен один раз, при неудаче — редирект на /login.
 async function apiFetch(url, options = {}) {
     const token = getToken();
     const headers = {
         ...(options.headers || {}),
         ...(token ? { "Authorization": `Bearer ${token}` } : {})
     };
-
     let response = await fetch(url, { ...options, headers });
-
     if (response.status === 401) {
         const refreshed = await refreshAccessToken();
         if (refreshed) {
-            headers["Authorization"] = `Bearer ${getToken()}`;
-            response = await fetch(url, { ...options, headers });
+            const newHeaders = {
+                ...(options.headers || {}),
+                "Authorization": `Bearer ${getToken()}`
+            };
+            response = await fetch(url, { ...options, headers: newHeaders });
         } else {
             clearTokens();
             window.location.href = "/login";
             return null;
         }
     }
-
     return response;
 }
-
-function logout() {
+async function logout() {
+    const refresh = localStorage.getItem("refresh_token");
+    if (refresh) {
+        try {
+            await fetch("/api/auth/logout", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ refresh_token: refresh })
+            });
+        } catch(e) { console.warn("Logout failed", e); }
+    }
     clearTokens();
     window.location.href = "/login";
 }
-
 // ===== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =====
 let editMode = false;
 let dragStart = null;
@@ -71,9 +68,8 @@ const GENDER_OPTIONS = ["", "М", "Ж"];
 const SHIFT_OPTIONS = ["", "дневная", "ночная"];
 const POSITION_OPTIONS = ["", "Пекарь", "Повар", "Слесарь-ремонтник", "Инженер", "Техник", "Механик", "Электрик", "Оператор", "Мастер", "Рабочий"];
 let customers = [];
-
+let fieldsList = [];
 // ===== ЗАГРУЗКА ДАННЫХ =====
-
 async function loadCustomers() {
     try {
         const res = await apiFetch("/api/customers");
@@ -83,11 +79,11 @@ async function loadCustomers() {
         customers = [];
     }
 }
-
 async function loadFields() {
     try {
         const response = await apiFetch("/api/fields");
         const data = await response.json();
+        fieldsList = data;
         const select = document.getElementById("fieldFilter");
         if (select) {
             select.innerHTML = '<option value="">Выберите месторождение</option>';
@@ -102,21 +98,9 @@ async function loadFields() {
         console.error("Ошибка загрузки месторождений:", err);
     }
 }
-
-// ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
-
-function calculateDays(checkIn, checkOut) {
-    if (!checkIn || !checkOut) return 0;
-    const start = new Date(checkIn);
-    const end = new Date(checkOut);
-    const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-    return diffDays > 0 ? diffDays : 0;
-}
-
 function daysInMonth(month, year) {
     return new Date(year, month, 0).getDate();
 }
-
 function generateCalendar(days) {
     const head = document.getElementById("calendarHead");
     if (!head) return;
@@ -129,50 +113,25 @@ function generateCalendar(days) {
     row += "<th>ФИО</th>";
     row += "<th>Должность</th>";
     row += "<th>Смена</th>";
-    for (let i = 1; i <= days; i++) {
-        row += `<th>${i}</th>`;
-    }
-    row += "</tr>";
+    for (let i = 1; i <= days; i++) row += `<th>${i}</th>`;
+    row += "<th>Заказчик</th>";
+    row += "<th>Месторождение</th>";
+    row += "</table>";
     head.innerHTML = row;
 }
-
-// ===== ГЛАВНЫЕ ФУНКЦИИ =====
-
-function searchResidents() {
-    console.log("searchResidents вызвана!");
-    loadCalendar();
-}
-
+function searchResidents() { loadCalendar(); }
 function clearSearch() {
-    console.log("clearSearch вызвана!");
-    const searchWord = document.getElementById("searchWord");
-    const fieldFilter = document.getElementById("fieldFilter");
-    if (searchWord) searchWord.value = "";
-    if (fieldFilter) fieldFilter.value = "";
+    document.getElementById("searchWord").value = "";
+    document.getElementById("fieldFilter").value = "";
     loadCalendar();
 }
-
 function downloadReport() {
     const dateFrom = document.getElementById("dateFrom")?.value;
     const dateTo = document.getElementById("dateTo")?.value;
-
-    console.log("downloadReport:", dateFrom, dateTo);
-
-    if (!dateFrom || !dateTo) {
-        alert("Выберите обе даты!");
-        return;
-    }
-
-    if (dateFrom > dateTo) {
-        alert("Дата начала не может быть позже даты конца!");
-        return;
-    }
-
-    const url = `/api/get_report?date_in=${dateFrom}&date_out=${dateTo}`;
-    console.log("Запрос отчета:", url);
-    window.open(url, "_blank");
+    if (!dateFrom || !dateTo) { alert("Выберите обе даты!"); return; }
+    if (dateFrom > dateTo) { alert("Дата начала не может быть позже даты конца!"); return; }
+    window.open(`/api/get_report?date_in=${dateFrom}&date_out=${dateTo}`, "_blank");
 }
-
 function toggleEditMode() {
     editMode = !editMode;
     const btn = document.getElementById("editModeBtn");
@@ -181,71 +140,64 @@ function toggleEditMode() {
         btn.style.background = editMode ? "#4CAF50" : "";
         btn.style.color = editMode ? "white" : "";
     }
-
     const month = document.getElementById("monthFilter")?.value;
     const year = document.getElementById("yearFilter")?.value;
     if (month && year) loadCalendar();
 }
-
 async function loadCalendar() {
-    console.log("loadCalendar вызвана!");
-    
-    await loadCustomers();
-    
+    await loadCustomers();   // обновляем список заказчиков для селектов
     const fieldSelect = document.getElementById("fieldFilter");
     const fieldId = fieldSelect?.value || "";
     const word = document.getElementById("searchWord")?.value || "";
     const year = document.getElementById("yearFilter")?.value || "2025";
     const month = document.getElementById("monthFilter")?.value || "1";
-    
     const days = daysInMonth(month, year);
     generateCalendar(days);
-
     let url = `/api/residents?`;
     const params = [];
     if (fieldId) params.push(`by_field=${fieldId}`);
     if (word) params.push(`word=${encodeURIComponent(word)}`);
     url += params.join("&");
-    
-    console.log("Запрос:", url);
-
     try {
         const response = await apiFetch(url);
-        if (!response) return; // 401 → редирект уже произошёл в apiFetch
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
+        if (!response) return;
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const residents = await response.json();
         const tbody = document.getElementById("calendarBody");
         if (!tbody) return;
         tbody.innerHTML = "";
-
         if (residents.error) {
             tbody.innerHTML = `<tr><td colspan="20" style="text-align:center; padding:20px;">${residents.error}</td></tr>`;
             return;
         }
-
         if (!residents || !residents.length) {
             tbody.innerHTML = '<tr><td colspan="20" style="text-align:center; padding:20px;">Ничего не найдено</td></tr>';
             return;
         }
-
+        // Функция для получения ID заказчика по имени (нужно для селекта в режиме редактирования)
+        const getCustomerIdByName = (name) => {
+            const c = customers.find(c => c.name === name);
+            return c ? c.id : null;
+        };
         residents.forEach(r => {
             const row = document.createElement("tr");
-
-            [
-                r.room_location || "", 
-                r.room_path || "", 
-                r.room_number || "", 
-                r.room_capacity || ""
-            ].forEach(val => {
-                const td = document.createElement("td");
-                td.textContent = val;
-                row.appendChild(td);
-            });
-
+            // Расположение
+            const tdLocation = document.createElement("td");
+            tdLocation.textContent = r.room_location || "";
+            row.appendChild(tdLocation);
+            // Путь
+            const tdPath = document.createElement("td");
+            tdPath.textContent = r.room_path || "";
+            row.appendChild(tdPath);
+            // № комнаты
+            const tdRoomNumber = document.createElement("td");
+            tdRoomNumber.textContent = r.room_number || "";
+            row.appendChild(tdRoomNumber);
+            // К-во мест (у тебя всегда пусто, но оставим)
+            const tdCapacity = document.createElement("td");
+            tdCapacity.textContent = r.room_capacity || "";
+            row.appendChild(tdCapacity);
+            // Пол
             const tdGender = document.createElement("td");
             if (editMode) {
                 tdGender.appendChild(makeEditSelect(GENDER_OPTIONS, r.gender, r.id, "gender"));
@@ -253,11 +205,11 @@ async function loadCalendar() {
                 tdGender.textContent = r.gender || "";
             }
             row.appendChild(tdGender);
-
+            // ФИО
             const tdName = document.createElement("td");
             tdName.textContent = r.full_name || "";
             row.appendChild(tdName);
-
+            // Должность
             const tdPosition = document.createElement("td");
             if (editMode) {
                 tdPosition.appendChild(makeEditSelect(POSITION_OPTIONS, r.position, r.id, "position"));
@@ -265,7 +217,7 @@ async function loadCalendar() {
                 tdPosition.textContent = r.position || "";
             }
             row.appendChild(tdPosition);
-
+            // Смена
             const tdShift = document.createElement("td");
             if (editMode) {
                 tdShift.appendChild(makeEditSelect(SHIFT_OPTIONS, r.shift, r.id, "shift"));
@@ -273,7 +225,7 @@ async function loadCalendar() {
                 tdShift.textContent = r.shift || "";
             }
             row.appendChild(tdShift);
-
+            // Дни месяца
             for (let i = 1; i <= days; i++) {
                 const selectedId = r.days_info?.[i] || "";
                 const td = document.createElement("td");
@@ -287,12 +239,16 @@ async function loadCalendar() {
                 td.appendChild(select);
                 row.appendChild(td);
             }
-
+            // Заказчик (колонка после дней) – только для отображения, НЕ редактируем
+            const tdCustomer = document.createElement("td");
+            tdCustomer.textContent = r.customer || "";
+            row.appendChild(tdCustomer);
+            // Месторождение
+            const tdField = document.createElement("td");
+            tdField.textContent = r.field || "";
+            row.appendChild(tdField);
             tbody.appendChild(row);
         });
-
-        initDragFill();
-        
     } catch (err) {
         console.error("Ошибка загрузки данных:", err);
         const tbody = document.getElementById("calendarBody");
@@ -301,13 +257,9 @@ async function loadCalendar() {
         }
     }
 }
-
-// ===== РЕЖИМ РЕДАКТИРОВАНИЯ =====
-
 function makeEditSelect(options, currentValue, residentId, field) {
     const select = document.createElement("select");
     select.className = "edit-select";
-
     options.forEach(opt => {
         const option = document.createElement("option");
         option.value = opt;
@@ -315,7 +267,6 @@ function makeEditSelect(options, currentValue, residentId, field) {
         if (opt === currentValue) option.selected = true;
         select.appendChild(option);
     });
-
     select.addEventListener("change", async () => {
         try {
             const response = await apiFetch("/api/update_resident", {
@@ -324,31 +275,23 @@ function makeEditSelect(options, currentValue, residentId, field) {
                 body: JSON.stringify({ id: residentId, [field]: select.value })
             });
             const result = await response.json();
-            if (result.status !== "ok") {
-                alert("Ошибка сохранения");
-            }
+            if (result.status !== "ok") alert("Ошибка сохранения");
         } catch (err) {
             console.error("Ошибка:", err);
         }
     });
-
     return select;
 }
-
 // ===== DRAG FILL =====
-
 function initDragFill() {
     const tbody = document.getElementById("calendarBody");
     if (!tbody) return;
-
     tbody.addEventListener("mousedown", (e) => {
         const td = e.target.closest("td");
         if (!td) return;
         if (e.target.tagName === "SELECT") return;
-
         const sel = td.querySelector(".day-select");
         if (!sel) return;
-
         dragStart = {
             residentId: sel.dataset.resident,
             day: parseInt(sel.dataset.day),
@@ -358,57 +301,52 @@ function initDragFill() {
         sel.classList.add("drag-highlight");
         e.preventDefault();
     });
-
     tbody.addEventListener("mouseover", (e) => {
         if (!dragStart) return;
         const td = e.target.closest("td");
         if (!td) return;
         const sel = td.querySelector(".day-select");
         if (!sel || sel.dataset.resident !== dragStart.residentId) return;
-
         const currentDay = parseInt(sel.dataset.day);
         const start = Math.min(dragStart.day, currentDay);
         const end = Math.max(dragStart.day, currentDay);
-
         tbody.querySelectorAll(`.day-select[data-resident='${dragStart.residentId}']`).forEach(s => s.classList.remove("drag-highlight"));
         for (let i = start; i <= end; i++) {
             const cell = tbody.querySelector(`.day-select[data-resident='${dragStart.residentId}'][data-day='${i}']`);
             if (cell) cell.classList.add("drag-highlight");
         }
     });
-
     document.addEventListener("mouseup", async () => {
         if (!dragStart) return;
         const selList = tbody.querySelectorAll(`.day-select[data-resident='${dragStart.residentId}'].drag-highlight`);
+        const saves = [];
         for (const sel of selList) {
             sel.value = dragMode === "fill" ? dragStart.value : "";
-            await saveDay(sel);
+            saves.push(saveDay(sel));
         }
+        await Promise.all(saves);
         selList.forEach(s => s.classList.remove("drag-highlight"));
         dragStart = null;
         dragMode = null;
     });
 }
-
 async function saveDay(selectEl) {
     const residentId = selectEl.dataset.resident;
     const day = selectEl.dataset.day;
     const month = document.getElementById("monthFilter")?.value;
     const year = document.getElementById("yearFilter")?.value;
     const customerId = selectEl.value ? parseInt(selectEl.value) : null;
-
     if (!residentId || !day || !month || !year) return;
-
     try {
         await apiFetch("/api/update_day", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-                resident_id: parseInt(residentId), 
-                day: parseInt(day), 
-                month: parseInt(month), 
-                year: parseInt(year), 
-                customer_id: customerId 
+            body: JSON.stringify({
+                resident_id: parseInt(residentId),
+                day: parseInt(day),
+                month: parseInt(month),
+                year: parseInt(year),
+                customer_id: customerId
             })
         });
     } catch (err) {
@@ -416,7 +354,121 @@ async function saveDay(selectEl) {
     }
 }
 // ===== ДОБАВЛЕНИЕ НОВОГО РЕЗИДЕНТА =====
-
+function addNewRow() {
+    const tbody = document.getElementById("calendarBody");
+    if (!tbody) return;
+    const oldNewRow = document.getElementById("new-resident-row");
+    if (oldNewRow) oldNewRow.remove();
+    const month = parseInt(document.getElementById("monthFilter")?.value, 10);
+    const year = parseInt(document.getElementById("yearFilter")?.value, 10);
+    if (!month || !year) {
+        alert("Сначала выберите месяц и год, затем нажмите Показать");
+        return;
+    }
+    const days = daysInMonth(month, year);
+    const head = document.getElementById("calendarHead");
+    if (!head?.innerHTML?.trim()) generateCalendar(days);
+    const row = document.createElement("tr");
+    row.id = "new-resident-row";
+    // Расположение
+    const tdLocation = document.createElement("td");
+    const locationSelect = document.createElement("select");
+    locationSelect.dataset.field = "location";
+    locationSelect.className = "edit-select";
+    locationSelect.innerHTML = `<option value="">—</option>
+                                <option value="Общежитие">Общежитие</option>
+                                <option value="Вагон">Вагон</option>`;
+    tdLocation.appendChild(locationSelect);
+    row.appendChild(tdLocation);
+    // Путь
+    const tdPath = document.createElement("td");
+    const pathInput = document.createElement("input");
+    pathInput.type = "text";
+    pathInput.className = "edit-input";
+    pathInput.dataset.field = "path";
+    pathInput.placeholder = "Путь";
+    pathInput.style.width = "100%";
+    tdPath.appendChild(pathInput);
+    row.appendChild(tdPath);
+    // № комнаты
+    const tdRoomNumber = document.createElement("td");
+    const roomNumberInput = document.createElement("input");
+    roomNumberInput.type = "text";
+    roomNumberInput.className = "edit-input";
+    roomNumberInput.dataset.field = "room_number";
+    roomNumberInput.placeholder = "№ комнаты";
+    roomNumberInput.style.width = "100%";
+    tdRoomNumber.appendChild(roomNumberInput);
+    row.appendChild(tdRoomNumber);
+    // К-во мест
+    const tdCapacity = document.createElement("td");
+    const capacityInput = document.createElement("input");
+    capacityInput.type = "number";
+    capacityInput.className = "edit-input";
+    capacityInput.dataset.field = "room_unique_id";
+    capacityInput.placeholder = "К-во мест";
+    capacityInput.style.width = "100%";
+    tdCapacity.appendChild(capacityInput);
+    row.appendChild(tdCapacity);
+    // Пол
+    const tdGender = document.createElement("td");
+    tdGender.appendChild(makeEditSelectNew(GENDER_OPTIONS, "gender"));
+    row.appendChild(tdGender);
+    // ФИО + кнопка сохранить
+    const tdName = document.createElement("td");
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.className = "edit-input";
+    nameInput.dataset.field = "full_name";
+    nameInput.placeholder = "ФИО";
+    const saveBtn = document.createElement("button");
+    saveBtn.type = "button";
+    saveBtn.className = "btn-compact";
+    saveBtn.textContent = "Сохранить";
+    saveBtn.style.marginLeft = "6px";
+    saveBtn.onclick = () => saveNewRow(row, month, year);
+    tdName.appendChild(nameInput);
+    tdName.appendChild(saveBtn);
+    row.appendChild(tdName);
+    // Должность
+    const tdPosition = document.createElement("td");
+    tdPosition.appendChild(makeEditSelectNew(POSITION_OPTIONS, "position"));
+    row.appendChild(tdPosition);
+    // Смена
+    const tdShift = document.createElement("td");
+    tdShift.appendChild(makeEditSelectNew(SHIFT_OPTIONS, "shift"));
+    row.appendChild(tdShift);
+    // Дни месяца
+    for (let i = 1; i <= days; i++) {
+        const td = document.createElement("td");
+        const select = document.createElement("select");
+        select.className = "day-select-new";
+        select.dataset.day = i;
+        select.innerHTML = `<option value="">-</option>` +
+            customers.map(c => `<option value="${c.id}">${c.name}</option>`).join("");
+        td.appendChild(select);
+        row.appendChild(td);
+    }
+    // Заказчик (правая колонка) – тоже селект
+    const tdCustomer = document.createElement("td");
+    const custSelect = document.createElement("select");
+    custSelect.dataset.field = "customer";
+    custSelect.className = "edit-select";
+    custSelect.innerHTML = '<option value="">Выберите заказчика</option>' +
+        customers.map(c => `<option value="${c.name}">${c.name}</option>`).join("");
+    tdCustomer.appendChild(custSelect);
+    row.appendChild(tdCustomer);
+    // Месторождение
+    const tdField = document.createElement("td");
+    const fieldSelect = document.createElement("select");
+    fieldSelect.dataset.field = "field";
+    fieldSelect.className = "edit-select";
+    fieldSelect.innerHTML = '<option value="">Выберите месторождение</option>' +
+        fieldsList.map(f => `<option value="${f.name}">${f.name}</option>`).join("");
+    tdField.appendChild(fieldSelect);
+    row.appendChild(tdField);
+    tbody.insertBefore(row, tbody.firstChild);
+}
 function makeEditSelectNew(options, field) {
     const select = document.createElement("select");
     select.className = "edit-select";
@@ -429,135 +481,58 @@ function makeEditSelectNew(options, field) {
     });
     return select;
 }
-
-function addNewRow() {
-    const tbody = document.getElementById("calendarBody");
-    if (!tbody) return;
-
-    const oldNewRow = document.getElementById("new-resident-row");
-    if (oldNewRow) oldNewRow.remove();
-
-    const month = parseInt(document.getElementById("monthFilter")?.value, 10);
-    const year = parseInt(document.getElementById("yearFilter")?.value, 10);
-
-    if (!month || !year) {
-        alert("Сначала выберите месяц и год, затем нажмите Показать");
-        return;
-    }
-
-    const days = daysInMonth(month, year);
-    const head = document.getElementById("calendarHead");
-    if (!head?.innerHTML?.trim()) {
-        generateCalendar(days);
-    }
-    
-    const row = document.createElement("tr");
-    row.id = "new-resident-row";
-
-    [
-        { key: "room_location", ph: "Расположение (Общежитие/Вагон)" },
-        { key: "room_path", ph: "Путь" },
-        { key: "room_number", ph: "№ комнаты" },
-        { key: "room_capacity", ph: "К-во мест" }
-    ].forEach(item => {
-        const td = document.createElement("td");
-
-        if (item.key === "room_location") {
-            const select = document.createElement("select");
-            select.className = "edit-select";
-            select.dataset.field = "room_location";
-            select.style.width = "100%";
-            select.innerHTML = `
-                <option value="">—</option>
-                <option value="Общежитие">Общежитие</option>
-                <option value="Вагон">Вагон</option>
-            `;
-            td.appendChild(select);
-        } else {
-            const input = document.createElement("input");
-            input.type = "text";
-            input.className = "edit-input";
-            input.dataset.field = item.key;
-            input.placeholder = item.ph;
-            input.style.width = "100%";
-            td.appendChild(input);
-        }
-
-        row.appendChild(td);
-    });
-
-    const tdGender = document.createElement("td");
-    tdGender.appendChild(makeEditSelectNew(GENDER_OPTIONS, "gender"));
-    row.appendChild(tdGender);
-
-    const tdName = document.createElement("td");
-    const nameInput = document.createElement("input");
-    nameInput.type = "text";
-    nameInput.className = "edit-input";
-    nameInput.dataset.field = "full_name";
-    nameInput.placeholder = "ФИО";
-
-    const saveBtn = document.createElement("button");
-    saveBtn.type = "button";
-    saveBtn.className = "btn-compact";
-    saveBtn.textContent = "Сохранить";
-    saveBtn.style.marginLeft = "6px";
-    saveBtn.onclick = () => saveNewRow(row, month, year);
-
-    tdName.appendChild(nameInput);
-    tdName.appendChild(saveBtn);
-    row.appendChild(tdName);
-
-    const tdPosition = document.createElement("td");
-    tdPosition.appendChild(makeEditSelectNew(POSITION_OPTIONS, "position"));
-    row.appendChild(tdPosition);
-
-    const tdShift = document.createElement("td");
-    tdShift.appendChild(makeEditSelectNew(SHIFT_OPTIONS, "shift"));
-    row.appendChild(tdShift);
-
-    for (let i = 1; i <= days; i++) {
-        const td = document.createElement("td");
-        const select = document.createElement("select");
-        select.className = "day-select-new";
-        select.dataset.day = i;
-        select.innerHTML = `<option value="">-</option>` +
-            customers.map(c => `<option value="${c.id}">${c.name}</option>`).join("");
-        td.appendChild(select);
-        row.appendChild(td);
-    }
-
-    tbody.insertBefore(row, tbody.firstChild);
-}
-
 async function saveNewRow(row, month, year) {
     const getValue = (field) => {
         const el = row.querySelector(`[data-field="${field}"]`);
         return el ? el.value : "";
     };
-
     const full_name = getValue("full_name");
-    if (!full_name) {
-        alert("Введите ФИО!");
+    if (!full_name) { alert("Введите ФИО!"); return; }
+    const field = getValue("field");
+    if (!field) { alert("Выберите месторождение!"); return; }
+    const customer = getValue("customer");
+    if (!customer) { alert("Выберите заказчика!"); return; }
+    const room_unique_id = getValue("room_unique_id");
+    if (!room_unique_id) { alert("Укажите количество мест в комнате!"); return; }
+    // Валидация дней
+    const daySelects = row.querySelectorAll(".day-select-new");
+    const filled = Array.from(daySelects)
+        .map(sel => ({ day: parseInt(sel.dataset.day), customerId: sel.value }))
+        .filter(item => item.customerId && item.customerId !== "");
+    if (filled.length === 0) {
+        alert("Выберите хотя бы один день проживания!");
         return;
     }
-
-    const check_in = `${year}-${String(month).padStart(2, "0")}-01`;
-    const lastDay = daysInMonth(month, year);
-    const check_out = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-
+    let minDay = Math.min(...filled.map(f => f.day));
+    let maxDay = Math.max(...filled.map(f => f.day));
+    let expectedCount = maxDay - minDay + 1;
+    if (filled.length !== expectedCount) {
+        alert(`Ошибка: заполнены не все дни с ${minDay} по ${maxDay}. Должны быть заполнены все дни подряд одним заказчиком.`);
+        return;
+    }
+    const firstCustomer = filled[0].customerId;
+    for (let i = 1; i < filled.length; i++) {
+        if (filled[i].customerId !== firstCustomer) {
+            alert(`Ошибка: в интервале с ${minDay} по ${maxDay} присутствуют разные заказчики. Должен быть один заказчик.`);
+            return;
+        }
+    }
+    const check_in = `${year}-${String(month).padStart(2, "0")}-${String(minDay).padStart(2, "0")}`;
+    const check_out = `${year}-${String(month).padStart(2, "0")}-${String(maxDay).padStart(2, "0")}`;
     const data = {
-        field: getValue("room_location") || "—",
-        customer: "—",
-        full_name,
-        position: getValue("position"),
-        gender: getValue("gender"),
-        shift: getValue("shift"),
-        check_in,
-        check_out,
-        days: lastDay
+        field: field,
+        customer: customer,
+        full_name: full_name,
+        position: getValue("position") || "",
+        gender: getValue("gender") || "",
+        shift: getValue("shift") || "",
+        room_number: getValue("room_number") || "—",
+        room_unique_id: room_unique_id,
+        location: getValue("location") || "Общежитие",
+        path: getValue("path") || "",
+        check_in: check_in,
+        check_out: check_out,
     };
-
     try {
         const response = await apiFetch("/api/add_resident", {
             method: "POST",
@@ -566,92 +541,43 @@ async function saveNewRow(row, month, year) {
         });
         const result = await response.json();
         if (!response.ok) {
-            alert(result.error || "Ошибка");
+            alert(result.detail || result.error || "Ошибка");
             return;
         }
-
         const residentId = result.resident_id;
-
-        if (residentId) {
-            const daySelects = row.querySelectorAll(".day-select-new");
-            for (const sel of daySelects) {
-                if (sel.value) {
-                    await apiFetch("/api/update_day", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            resident_id: residentId,
-                            day: parseInt(sel.dataset.day),
-                            month,
-                            year,
-                            customer_id: parseInt(sel.value)
-                        })
-                    });
-                }
+        // Сохраняем выбранные дни
+        for (const sel of daySelects) {
+            if (sel.value) {
+                await apiFetch("/api/update_day", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        resident_id: residentId,
+                        day: parseInt(sel.dataset.day),
+                        month: month,
+                        year: year,
+                        customer_id: parseInt(sel.value)
+                    })
+                });
             }
         }
-
         alert("Запись добавлена!");
         loadCalendar();
-
     } catch (err) {
         alert("Ошибка: " + err.message);
     }
 }
-
-// ===== ЗАГРУЗКА EXCEL ФАЙЛА =====
-
+// ===== ЗАГРУЗКА EXCEL =====
 async function uploadExcel() {
-    console.log("🔵 Загрузка Excel началась!");
-    
     const fileInput = document.getElementById("excelFile");
-    if (!fileInput) {
-        alert("Элемент выбора файла не найден!");
-        return;
-    }
-    
+    if (!fileInput) { alert("Элемент выбора файла не найден!"); return; }
     const file = fileInput.files[0];
-    if (!file) {
-        alert("Выберите файл!");
-        return;
-    }
-    
-    console.log(`📁 Выбран файл: ${file.name}, размер: ${file.size} байт`);
-    
+    if (!file) { alert("Выберите файл!"); return; }
     const formData = new FormData();
     formData.append("file", file);
-    
     try {
-        console.log("📤 Отправляю запрос на /api/upload_excel...");
-        
-        const response = await apiFetch("/api/upload_excel", {
-            method: "POST",
-            body: formData
-        });
-        
-        console.log(`📥 Статус ответа: ${response.status}`);
-        
-        // Получаем текст ответа
-        const responseText = await response.text();
-        console.log(`📄 Тело ответа: ${responseText}`);
-        
-        if (!responseText) {
-            alert("Сервер вернул пустой ответ!");
-            return;
-        }
-        
-        // Парсим JSON
-        let result;
-        try {
-            result = JSON.parse(responseText);
-            console.log("📦 Распарсенный JSON:", result);
-        } catch (e) {
-            console.error("❌ Ответ не является JSON:", responseText);
-            alert("Ошибка формата ответа от сервера!");
-            return;
-        }
-        
-        // Проверяем результат
+        const response = await apiFetch("/api/upload_excel", { method: "POST", body: formData });
+        const result = await response.json();
         if (response.ok && result.message) {
             alert("✅ " + result.message);
             fileInput.value = "";
@@ -661,80 +587,27 @@ async function uploadExcel() {
         } else {
             alert("⚠️ Неизвестный ответ от сервера");
         }
-        
     } catch (err) {
-        console.error("💥 Критическая ошибка:", err);
+        console.error("Ошибка загрузки:", err);
         alert("Ошибка загрузки: " + err.message);
     }
 }
-
-// ===== ОБРАБОТЧИКИ СОБЫТИЙ =====
-
+// ===== ОБРАБОТЧИКИ =====
 document.addEventListener("change", async (e) => {
-    if (e.target.classList.contains("day-select")) {
-        const residentId = e.target.dataset.resident;
-        if (!residentId) return;
-        
-        const day = e.target.dataset.day;
-        const month = document.getElementById("monthFilter")?.value;
-        const year = document.getElementById("yearFilter")?.value;
-        const customerId = e.target.value ? parseInt(e.target.value) : null;
-
-        if (!day || !month || !year) return;
-
-        try {
-            await apiFetch("/api/update_day", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ 
-                    resident_id: parseInt(residentId), 
-                    day: parseInt(day), 
-                    month: parseInt(month), 
-                    year: parseInt(year), 
-                    customer_id: customerId 
-                })
-            });
-        } catch (err) {
-            console.error("Ошибка:", err);
-        }
-    }
+    if (e.target.classList.contains("day-select")) await saveDay(e.target);
 });
-
-// ===== ИНИЦИАЛИЗАЦИЯ ПРИ ЗАГРУЗКЕ СТРАНИЦЫ =====
-
+// ===== ИНИЦИАЛИЗАЦИЯ =====
 document.addEventListener("DOMContentLoaded", async function () {
-    console.log("🚀 Страница загружена! Начинаю инициализацию...");
-
-    // Проверяем наличие токена — если нет, идём на логин
-    if (!getToken()) {
-        window.location.href = "/login";
-        return;
-    }
-    
-    
-    
-    
-    // Загружаем данные
+    if (!getToken()) { window.location.href = "/login"; return; }
     await loadFields();
     await loadCustomers();
-    
-    // Устанавливаем текущий месяц и год
     const now = new Date();
     const monthEl = document.getElementById("monthFilter");
     const yearEl = document.getElementById("yearFilter");
     if (monthEl) monthEl.value = now.getMonth() + 1;
     if (yearEl) yearEl.value = now.getFullYear();
-    
-    // Кнопка добавления резидента
     const addBtn = document.getElementById("addResidentBtn");
-    if (addBtn) {
-        addBtn.addEventListener("click", function () {
-            addNewRow();
-        });
-    }
-    
-    // Загружаем календарь
+    if (addBtn) addBtn.addEventListener("click", addNewRow);
+    initDragFill();
     await loadCalendar();
-    
-    console.log("✅ Инициализация завершена!");
 });

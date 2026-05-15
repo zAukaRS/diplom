@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from pathlib import Path
+from pathlib import Path as PathLib
 from starlette.templating import Jinja2Templates
 from .utils import get_admin_role_id
 from .core.security import get_password_hash
@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from fastapi import File, UploadFile, Depends
 import pandas as pd
 from .database import get_db, Session_async
-from . import models
+
 from datetime import datetime,timedelta, date
 from fastapi import Body
 import os
@@ -22,14 +22,14 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from typing import Dict, List, Optional
-from .models import User, Role
+from app.models import (
+    User, Role, Field, Customer, Location, Path, Workplace, Room, Resident, ResidentDay
+)
 from sqlalchemy.orm import joinedload
 from sqlalchemy import text, and_, or_, select, func, desc, extract, and_
 from fastapi import Depends, HTTPException
 import io
 from .excel_parser import parse_all_months
-# from .routers import auth, users  # уже импортировано выше
-
 
 
 
@@ -40,15 +40,12 @@ app = FastAPI()
 app.include_router(auth.router)
 app.include_router(users.router)
 
-BASE_DIR = Path(__file__).parent.parent
+BASE_DIR = PathLib(__file__).parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
 templates = Jinja2Templates(directory=FRONTEND_DIR)
 
 app.mount("/css", StaticFiles(directory=FRONTEND_DIR / "css"), name="css")
 app.mount("/js", StaticFiles(directory=FRONTEND_DIR / "js"), name="js")
-
-# app.include_router(auth.router)
-# app.include_router(users.router)
 
 
 def create_report(dict_list: list, output_filename: str, sheet_name='расч.л'):
@@ -114,7 +111,7 @@ def create_report(dict_list: list, output_filename: str, sheet_name='расч.л
 
 # get_current_user теперь из .core.dependencies (JWT Bearer)
 
-async def admin_only(user: models.User = Depends(get_current_user)):
+async def admin_only(user: User = Depends(get_current_user)):
     if user.role.name != "admin":
         raise HTTPException(status_code=403, detail="Доступ запрещён")
     return user
@@ -180,33 +177,52 @@ async def update_day(data: dict = Body(...), db: AsyncSession = Depends(get_db))
         day = int(data["day"])
         month = int(data["month"])
         year = int(data["year"])
-
-        # Получаем customer_id из тела запроса
         customer_id = data.get("customer_id")
-        try:
-            customer_id = int(customer_id )
-        except (TypeError, ValueError):
-            customer_id  = None
+        if customer_id is not None:
+            customer_id = int(customer_id)
 
         target_date = date(year, month, day)
-        res = await db.execute(select(models.ResidentDay).where(and_(models.ResidentDay.resident_id == resident_id,models.ResidentDay.date == target_date)))
+
+        # Ищем существующую запись
+        res = await db.execute(
+            select(ResidentDay).where(
+                and_(
+                    ResidentDay.resident_id == resident_id,
+                    ResidentDay.date == target_date
+                )
+            )
+        )
         rd = res.scalars().first()
-        if not rd:
-            rd = models.ResidentDay(
+
+        if rd:
+            # Обновляем только заказчика
+            rd.customer_id = customer_id
+        else:
+            # Нужно получить данные из родительского Resident
+            res_r = await db.execute(
+                select(Resident).where(Resident.id == resident_id)
+            )
+            resident = res_r.scalars().first()
+            if not resident:
+                raise HTTPException(404, f"Проживающий {resident_id} не найден")
+
+            rd = ResidentDay(
                 resident_id=resident_id,
+                room_id=resident.room_id,     
                 date=target_date,
-                customer_id=customer_id 
+                extra=resident.check_out,      
+                customer_id=customer_id
             )
             db.add(rd)
-        else:
-            rd.customer_id = customer_id 
 
         await db.commit()
-        return JSONResponse({"status": "ok"})
+        return {"status": "ok"}
 
+    except HTTPException as he:
+        raise he
     except Exception as e:
         await db.rollback()
-        return JSONResponse({"status": "error", "detail": str(e)})
+        raise HTTPException(400, detail=str(e))
     
 
 
@@ -220,36 +236,36 @@ async def get_residents(
 ):
     
     
-    query = select(models.Resident).options(
-        selectinload(models.Resident.field),
-        selectinload(models.Resident.customer),
-        selectinload(models.Resident.room).selectinload(models.Room.location),
-        selectinload(models.Resident.room).selectinload(models.Room.path),
-        selectinload(models.Resident.resident_days)
+    query = select(Resident).options(
+        selectinload(Resident.field),
+        selectinload(Resident.customer),
+        selectinload(Resident.room).selectinload(Room.location),
+        selectinload(Resident.room).selectinload(Room.path),
+        selectinload(Resident.resident_days)
     )
     
     # Фильтр по ID месторождения
     if by_field and by_field.strip():
         try:
             field_id = int(by_field)
-            query = query.where(models.Resident.field_id == field_id)
-            print(f"  Фильтр по field_id: {field_id}")
+            query = query.where(Resident.field_id == field_id)
+            
         except ValueError:
             pass
     
     # Фильтр по поисковому слову
     if word:
         word_lower = word.lower().strip()
-        query = query.outerjoin(models.Room)\
-                     .outerjoin(models.Location)\
-                     .outerjoin(models.Customer)\
+        query = query.outerjoin(Room)\
+                     .outerjoin(Location)\
+                     .outerjoin(Customer)\
                      .where(
             or_(
-                models.Resident.full_name.ilike(f"%{word_lower}%"),
-                models.Resident.position.ilike(f"%{word_lower}%"),
-                models.Room.room_number.ilike(f"%{word_lower}%"),
-                models.Location.name.ilike(f"%{word_lower}%"),
-                models.Customer.name.ilike(f"%{word_lower}%")
+                Resident.full_name.ilike(f"%{word_lower}%"),
+                Resident.position.ilike(f"%{word_lower}%"),
+                Room.room_number.ilike(f"%{word_lower}%"),
+                Location.name.ilike(f"%{word_lower}%"),
+                Customer.name.ilike(f"%{word_lower}%")
             )
         )
 
@@ -295,51 +311,94 @@ async def get_residents(
 @app.post("/api/add_resident")
 async def add_resident(data: dict = Body(...), db: AsyncSession = Depends(get_db)):
     try:
-        res = await db.execute(select(models.Field).where(models.Field.name == data["field"]))
+        # 1. Месторождение
+        res = await db.execute(select(Field).where(Field.name == data["field"]))
         field = res.scalars().first()
         if not field:
-            field = models.Field(name=data["field"])
+            field = Field(name=data["field"])
             db.add(field)
-            await db.flush()
 
-        # --- Работа с заказчиком ---
-        res = await db.execute(select(models.Customer).where( models.Customer.name == data["customer"]))
+        # 2. Заказчик
+        res = await db.execute(select(Customer).where(Customer.name == data["customer"]))
         customer = res.scalars().first()
-           
         if not customer:
-            customer = models.Customer(name=data["customer"])
+            customer = Customer(name=data["customer"])
             db.add(customer)
+
+        # 3. Расположение
+        res = await db.execute(select(Location).where(Location.name == data["location"]))
+        location = res.scalars().first()
+        if not location:
+            location = Location(name=data["location"])
+            db.add(location)
+
+        # 4. Путь
+        res = await db.execute(select(Path).where(Path.description == data["path"]))
+        path = res.scalars().first()
+        if not path:
+            path = Path(description=data["path"])
+            db.add(path)
+
+        await db.flush()
+
+        # 5. Комната – ИСПРАВЛЕНО: выбираем объект, а не только id
+        raw_uid = data.get("room_unique_id", "")
+        room_unique_id= raw_uid + 'a'
+        capacity_val = int(raw_uid) if raw_uid.isdigit() else 0
+
+        res = await db.execute(
+            select(Room).where(
+                and_(
+                    Room.room_number == data['room_number'],
+                    Room.room_unique_id == room_unique_id
+                )
+            )
+        )
+        room = res.scalars().first()
+        if not room:
+            room = Room(
+                room_number=data['room_number'],
+                field_id=field.id,
+                capacity=capacity_val,
+                location_id=location.id,
+                path_id=path.id,
+                room_unique_id=room_unique_id
+            )
+            db.add(room)
             await db.flush()
 
-        # --- Добавляем проживающего ---
-        resident = models.Resident(
+        # 6. Проживающий
+        resident = Resident(
             field_id=field.id,
             customer_id=customer.id,
             full_name=data["full_name"],
-            position=data.get("position", ""),
             check_in=datetime.strptime(data["check_in"], "%Y-%m-%d").date(),
             check_out=datetime.strptime(data["check_out"], "%Y-%m-%d").date(),
-            days=int(data["days"])
+            position=data.get("position", ""),
+            gender=data.get("gender", ""),
+            room_id=room.id,          # ← room – всегда объект
+            shift=data.get("shift", "")
         )
         db.add(resident)
         await db.flush()
 
-        current = resident.check_in
-        while current <= resident.check_out:
-            day = models.ResidentDay(
-                resident_id=resident.id,
-                room_id=resident.room_id if resident.room_id else None,
-                date=current
-            )
-            db.add(day)
-            current += timedelta(days=1)
+        # 7. День заезда (только одна запись, как ты и хотел)
+        day = ResidentDay(
+            resident_id=resident.id,
+            room_id=resident.room_id,
+            date=resident.check_in,
+            extra=resident.check_out,
+            customer_id=customer.id
+        )
+        db.add(day)
         await db.commit()
-        await db.refresh(resident)
+
         return {"message": "Запись успешно добавлена", "resident_id": resident.id}
 
     except Exception as e:
         await db.rollback()
-        return {"error": str(e)}
+        # Возвращаем 400 с деталями ошибки
+        raise HTTPException(status_code=400, detail=str(e))
     
 @app.post("/api/upload_excel")
 async def upload_excel(
@@ -351,113 +410,169 @@ async def upload_excel(
 
     if not file.filename.endswith((".xlsx", ".xls")):
         return JSONResponse({"error": "Неверный формат файла"}, status_code=400)
-
     try:
-        # Извлекаем имя месторождения и год из имени файла
-        base_name = file.filename.rsplit(".", 1)[0].strip()
-        parts = base_name.split("_")
-        field_name = parts[0]
-        year = int(parts[1]) if len(parts) > 1 else 2025
-    except (IndexError, ValueError):
-        return JSONResponse({"error": "Имя файла должно быть вида Урманское_2025.xlsx"}, status_code=400)
+        try:
+            # Извлекаем имя месторождения и год из имени файла
+            base_name = file.filename.rsplit(".", 1)[0].strip()
+            parts = base_name.split("_")
+            field_name = parts[0]
+            year = int(parts[1]) if len(parts) > 1 else 2025
+        except (IndexError, ValueError):
+            return JSONResponse({"error": "Имя файла должно быть вида Урманское_2025.xlsx"}, status_code=400)
 
-    try:
-        contents = await file.read()
-        wb = load_workbook(io.BytesIO(contents), data_only=False)
+        try:
+            contents = await file.read()
+            wb = load_workbook(io.BytesIO(contents), data_only=False)
 
-        # ШАГ 1: Читаем все записи из Excel в память
-        all_records = list(parse_all_months(wb, year=year))
-        print(f"  Распарсено из Excel: {len(all_records)} записей", flush=True)
+            # ШАГ 1: Читаем все записи из Excel в память
+            all_records = list(parse_all_months(wb, year=year))
+            print(f"  Распарсено из Excel: {len(all_records)} записей", flush=True)
 
-        errors = []
-        total = 0
+            errors = []
+            total = 0
 
-        # ШАГ 2: Создаём все справочники (Field, Customer, Location, Path, Room)
-        # Храним только id, не объекты SQLAlchemy
-        customer_cache: dict[str, int] = {}
-        location_cache: dict[str, int] = {}
-        path_cache: dict[str, int] = {}
-        room_cache: dict[str, int] = {}
+            # ШАГ 2: Создаём все справочники (Field, Customer, Location, Path, Room)
+            # Храним только id, не объекты SQLAlchemy
+            customer_cache = {
+                c.name: c.id
+                for c in (await db.execute(select(Customer))).scalars()
+            }
 
-        res = await db.execute(select(models.Field).where(models.Field.name == field_name))
-        field = res.scalars().first()
-        if not field:
-            field = models.Field(name=field_name)
-            db.add(field)
-            await db.flush()
-        field_id = field.id
+            location_cache = {
+                l.name: l.id
+                for l in (await db.execute(select(Location))).scalars()
+            }
 
+            path_cache = {
+                p.description: p.id
+                for p in (await db.execute(select(Path))).scalars()
+            }
+
+            workplace_cach = {
+                w.name: w.id
+                for w in (await db.execute(select(Workplace))).scalars()
+            }
+
+            room_cache = {
+                w.room_number + w.room_unique_id: w.id
+                for w in (await db.execute(select(Room))).scalars()
+            }
+            
+            res = await db.execute(select(Field).where(Field.name == field_name))
+            field = res.scalars().first()
+            if not field:
+                field = Field(name=field_name)
+                db.add(field)
+                await db.flush()
+            field_id = field.id
+
+        except Exception as e:
+            await db.rollback()
+            print(f"❌ Критическая ошибка: {e}", flush=True)
+            return JSONResponse({"error": str(e)}, status_code=500)
+        
         for rec in all_records:
             customer_name = rec.get("customer") or "Неизвестно"
             location_name = rec.get("расположение") or "-"
             path_desc     = rec.get("путь") or "-"
             room_name     = rec.get("комната") or "—"
+            workplace_name     = rec.get("workplace") or "—"
 
+            if workplace_name != "—" and workplace_name not in workplace_cach:
+                workplace_obj = Workplace(name=workplace_name)
+                db.add(workplace_obj)
+                workplace_cach[workplace_name] = workplace_obj
+            
             if customer_name not in customer_cache:
-                r = await db.execute(select(models.Customer).where(models.Customer.name == customer_name))
-                obj = r.scalars().first()
-                if not obj:
-                    obj = models.Customer(name=customer_name)
-                    db.add(obj)
-                    await db.flush()
-                customer_cache[customer_name] = obj.id
+                customer_obj = Customer(name=customer_name)
+                db.add(customer_obj)
+                customer_cache[customer_name] = customer_obj
 
             if location_name not in location_cache:
-                r = await db.execute(select(models.Location).where(models.Location.name == location_name))
-                obj = r.scalars().first()
-                if not obj:
-                    obj = models.Location(name=location_name)
-                    db.add(obj)
-                    await db.flush()
-                location_cache[location_name] = obj.id
+                location_obj = Location(name=location_name)
+                db.add(location_obj)
+                location_cache[location_name] = location_obj
 
             if path_desc not in path_cache:
-                r = await db.execute(select(models.Path).where(models.Path.description == path_desc))
-                obj = r.scalars().first()
-                if not obj:
-                    obj = models.Path(description=path_desc)
-                    db.add(obj)
-                    await db.flush()
-                path_cache[path_desc] = obj.id
-            room_uid = rec.get("room_unique_id") or ""
-            room_cache_key = room_name + room_uid
-            if room_cache_key not in room_cache:
-                r = await db.execute(select(models.Room).where(and_(models.Room.room_number == room_name,models.Room.room_unique_id == rec.get("room_unique_id"))))
-                obj = r.scalars().first()
-                if not obj:
-                    try:
-                        capacity = int(rec.get("мест", 0))
-                    except (ValueError, TypeError):
-                        capacity = 0
-                    obj = models.Room(
+                path_obj = Path(description=path_desc)
+                db.add(path_obj)
+                path_cache[path_desc] = path_obj
+
+        await db.flush()
+        
+        workplace_cach = {
+            k: (v.id if isinstance(v, Workplace) else v)
+            for k, v in workplace_cach.items()
+        }
+        customer_cache = {
+            k: (v.id if isinstance(v, Customer) else v)
+            for k, v in customer_cache.items()
+        }
+        location_cache = {
+            k: (v.id if isinstance(v, Location) else v)
+            for k, v in location_cache.items()
+        }
+        path_cache = {
+            k: (v.id if isinstance(v, Path) else v)
+            for k, v in path_cache.items()
+        }
+            
+            
+        try:
+            for rec in all_records:
+                room_name = rec.get("комната") or "—"
+                room_uid = rec.get("room_unique_id") or ""
+                room_cache_key = room_name + room_uid
+                if room_cache_key in room_cache:
+                    continue
+
+                location_name = rec.get("расположение") or "-"
+                path_desc = rec.get("путь") or "-"
+
+                if room_cache_key not in room_cache:
+                    room_obj = Room(
                         room_number=room_name,
-                        capacity=capacity,
+                        capacity=int(rec.get("мест")) if rec.get("мест") else 0,
                         field_id=field_id,
                         location_id=location_cache[location_name],
                         path_id=path_cache[path_desc],
                         room_unique_id=room_uid or None
                     )
-                    db.add(obj)
-                    await db.flush()
-                room_cache[room_cache_key] = obj.id
+                    db.add(room_obj)
+                    
+                    room_cache[room_cache_key] = room_obj
+        
+        except Exception as e:
+            await db.rollback()  
+            print(f"Критическая ошибка: {e}", flush=True)
+            return JSONResponse(
+                {"error": str(e)},
+                status_code=500
+            )
 
-        # Коммитим справочники — все id теперь стабильны в БД
+
+        await db.flush()
+        room_cache = {
+                k: v.id if isinstance(v, Room) else v
+                for k, v in room_cache.items()
+            }
         await db.commit()
         print(f"  Справочники сохранены", flush=True)
 
         # ШАГ 3: Добавляем жильцов, каждый — отдельный commit
         # При ошибке одного делаем rollback только его, справочники уже в БД
+        pending = 0
         for rec in all_records:
             try:
+                workplace_id= workplace_cach.get(rec.get("workplace") or "—")
                 customer_id = customer_cache[rec.get("customer") or "Неизвестно"]
                 room_uid = rec.get("room_unique_id") or ""
                 room_cache_key = (rec.get("комната") or "—") + room_uid
                 room_id = room_cache[room_cache_key]
-
                 gender_raw = rec.get("пол", "")
                 gender = "М" if isinstance(gender_raw, str) and gender_raw.lower().startswith("муж") else "Ж"
 
-                resident = models.Resident(
+                resident = Resident(
                     field_id=field_id,
                     customer_id=customer_id,
                     full_name=rec["full_name"],
@@ -470,35 +585,45 @@ async def upload_excel(
                 )
                 db.add(resident)
                 await db.flush()
-
-                db.add(models.ResidentDay(
+                pending += 1
+                
+                
+                db.add(ResidentDay(
                     resident_id=resident.id,
                     date=rec["check_in"],
                     extra=rec["check_out"],
                     customer_id=customer_id,
                     room_id=room_id,
+                    workplace_id=workplace_id
                 ))
-
-                await db.commit()
+                if pending >= 50:
+                    await db.commit()
+                    pending = 0
+                
                 total += 1
-                print(f"  ✓ [{total}] {rec['full_name']} {rec['check_in']} → {rec['check_out']}", flush=True)
+                # print(f"  ✓ [{total}] {rec['full_name']} {rec['check_in']} → {rec['check_out']}", flush=True)
 
             except Exception as e:
                 await db.rollback()  
                 errors.append({"record": rec.get("full_name", "?"), "error": str(e)})
                 print(f"  ✗ Ошибка: {rec.get('full_name')}: {e}", flush=True)
 
+
+        if pending:
+            await db.commit()
+
         print(f"✅ Готово: {total} записей, ошибок: {len(errors)}", flush=True)
         return {
             "message": f"Загружено {total} записей" + (f", пропущено: {len(errors)}" if errors else ""),
             "errors": errors[:20],
         }
-
     except Exception as e:
-        await db.rollback()
-        print(f"❌ Критическая ошибка: {e}", flush=True)
-        return JSONResponse({"error": str(e)}, status_code=500)
-
+        await db.rollback()  
+        print(f"Критическая ошибка: {e}", flush=True)
+        return JSONResponse(
+            {"error": str(e)},
+            status_code=500
+        )
 
 
 @app.get('/api/get_report')
@@ -506,15 +631,15 @@ async def get_report(date_in : date, date_out : date, db: AsyncSession = Depends
     
     # print(f"Ищем за период: {date_from} — {date_to}") 
     res = await db.execute(
-                            select(models.Resident)
-                           .join(models.Field, models.Field.id == models.Resident.field_id)
-                           .join(models.Customer, models.Customer.id == models.Resident.customer_id)
-                           .where(and_(models.Resident.check_in <= date_out,
-                                       models.Resident.check_out >= date_in))
-                            .order_by(models.Field.name, models.Customer.name)
+                            select(Resident)
+                           .join(Field, Field.id == Resident.field_id)
+                           .join(Customer, Customer.id == Resident.customer_id)
+                           .where(and_(Resident.check_in <= date_out,
+                                       Resident.check_out >= date_in))
+                            .order_by(Field.name, Customer.name)
                             .options(
-                            selectinload(models.Resident.field),      # ← загружаем field
-                            selectinload(models.Resident.customer)   # ← загружаем customer
+                            selectinload(Resident.field),      # ← загружаем field
+                            selectinload(Resident.customer)   # ← загружаем customer
                             )
                         )
     residents = res.scalars().unique().all()
@@ -545,7 +670,7 @@ async def get_report(date_in : date, date_out : date, db: AsyncSession = Depends
 
 @app.get("/api/fields")
 async def get_fields(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(models.Field))
+    result = await db.execute(select(Field))
     fields = result.scalars().all()
     return [
         {"id": f.id, "name": f.name}
@@ -563,10 +688,10 @@ def admin_page(request: Request, user: User = Depends(admin_only)):
 
 @app.get("/api/get_admins")
 async def get_admins(db: AsyncSession = Depends(get_db), user: User = Depends(admin_only)):
-    res = await db.execute(select(models.User)
-                           .join(models.Role, models.User.role_id == models.Role.id)
-                           .where(models.Role.name == 'admin')
-                           .options(selectinload(models.User.field)) )
+    res = await db.execute(select(User)
+                           .join(Role, User.role_id == Role.id)
+                           .where(Role.name == 'admin')
+                           .options(selectinload(User.field)) )
     admins = res.scalars().unique().all()
     result = []
     for u in admins:
@@ -589,14 +714,14 @@ async def create_admin(request: Request, user: User = Depends(admin_only), db : 
         return JSONResponse({"error": "Все поля обязательны"}, status_code=400)
 
 
-    res = await db.execute(select(models.User).where(models.User.username == username))
+    res = await db.execute(select(User).where(User.username == username))
     if res.scalars().first():
         return JSONResponse({"error": "Логин уже существует"}, status_code=400)
 
     admin_role_id = await get_admin_role_id(db)
     hashed_password = get_password_hash(password)
 
-    new_admin = models.User(
+    new_admin = User(
         username=username,
         password=hashed_password,
         role_id=admin_role_id,
@@ -618,7 +743,7 @@ async def create_admin(request: Request, user: User = Depends(admin_only), db : 
 @app.put("/api/update_admin_inline/{admin_id}")
 async def update_admin_inline(admin_id: int, data: dict = Body(...), db : AsyncSession = Depends(get_db), current_user: User = Depends(admin_only)): ##############################
     try:
-        res = await db.execute(select(models.User).where(models.User.id == admin_id))
+        res = await db.execute(select(User).where(User.id == admin_id))
         admin = res.scalars().first()
         if not admin:
             return JSONResponse({"error": "Админ не найден"}, status_code=404)
@@ -641,7 +766,7 @@ async def update_admin_inline(admin_id: int, data: dict = Body(...), db : AsyncS
 @app.delete("/api/delete_admin/{admin_id}")
 async def delete_admin(admin_id: int, db : AsyncSession = Depends(get_db), current_user: User = Depends(admin_only)):
     try:
-        res = await db.execute(select(models.User).where(models.User.id == admin_id))
+        res = await db.execute(select(User).where(User.id == admin_id))
         admin = res.scalars().first()
         if not admin:
             return JSONResponse({"error": "Админ не найден"}, status_code=404)
@@ -656,7 +781,7 @@ async def delete_admin(admin_id: int, db : AsyncSession = Depends(get_db), curre
 @app.post("/api/update_resident")
 async def update_resident(data: dict = Body(...), db: AsyncSession = Depends(get_db)):
     try:
-        res = await db.execute(select(models.Resident).where(models.Resident.id == data["id"]))
+        res = await db.execute(select(Resident).where(Resident.id == data["id"]))
         resident = res.scalars().first()
         if not resident:
             return JSONResponse(content={"error": "Жилец не найден"}, status_code=404)
@@ -678,6 +803,6 @@ async def update_resident(data: dict = Body(...), db: AsyncSession = Depends(get
 
 @app.get("/api/customers")
 async def get_customers(db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(models.Customer))
+    res = await db.execute(select(Customer))
     customers = res.scalars().all()
     return [{"id": c.id, "name": c.name} for c in customers]

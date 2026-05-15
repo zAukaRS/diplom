@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, Date, Boolean
 from sqlalchemy.orm import relationship
-from .database import Base
+from app.database import Base
 
 
 class Role(Base):
@@ -81,7 +81,8 @@ class ResidentDay(Base):
     extra = Column(Date, nullable=True)
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True) 
     customer = relationship("Customer", back_populates="resident_days")  
-
+    workplace_id =  Column(Integer, ForeignKey("workplaces.id"), nullable=True)
+    workplace = relationship("Workplace", back_populates="resident_days")
     resident = relationship("Resident", back_populates="resident_days")
     room = relationship("Room", back_populates="resident_days")
 
@@ -123,3 +124,8 @@ class Path(Base):
 
     rooms = relationship("Room", back_populates="path")
 
+class Workplace(Base):
+    __tablename__ = "workplaces"
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    resident_days = relationship("ResidentDay", back_populates="workplace")

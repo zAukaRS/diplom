@@ -144,7 +144,7 @@ def parse_sheet(
             "смена": str,
             "full_name": str,
             "position": str,
-            "customer": str,      
+            "customer": str,       # название организации из дневных ячеек
             "check_in": date,
             "check_out": date,
             "days": int,
@@ -243,7 +243,8 @@ def parse_sheet(
                     "check_out": check_out,
                     "days": (check_out - check_in).days + 1,
                     "room_unique_id" : ctx_room_unique,
-                    "workplace" : cv(40)
+                    "workplace" : cv(40),
+                    "idx" : _,
                 }
         else:
             # N имён ↔ N блоков
@@ -267,7 +268,8 @@ def parse_sheet(
                     "check_out": check_out,
                     "days": (check_out - check_in).days + 1,
                     "room_unique_id" : ctx_room_unique,
-                    "workplace" : cv(40)
+                    "workplace" : cv(40),
+                    "idx" : _,
                 }
 
 
@@ -306,3 +308,19 @@ def parse_all_months(wb_or_path, year: int) -> Generator[dict, None, None]:
                 break
 
 
+contents = ("D:/в/Шингинское_2025.xlsx")
+wb = load_workbook(contents, data_only=False)
+workplace_cach : dict[str,str] = {}
+       
+all_records = list(parse_all_months(wb, year=2025))
+print(f"  Распарсено из Excel: {len(all_records)} записей", flush=True)
+
+for x in all_records:
+    workplace_name = x.get("workplace") or "—"
+    if workplace_name != "—" and workplace_name not in workplace_cach:
+        workplace_cach[workplace_name] = workplace_name
+    workplace_id = workplace_cach.get(workplace_name) or "—"
+    
+    if workplace_id != "—":
+     
+        print(x.get("idx"),workplace_id)
