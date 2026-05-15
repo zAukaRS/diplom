@@ -1,5 +1,5 @@
-from .models import Role
-from .database import get_db
+from app.models import Role
+from app.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 from sqlalchemy import select
