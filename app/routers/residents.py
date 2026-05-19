@@ -145,7 +145,8 @@ async def add_resident(data: dict = Body(...), db: AsyncSession = Depends(get_db
             room_id=resident.room_id,
             date=resident.check_in,
             extra=resident.check_out,
-            customer_id=customer.id
+            customer_id=customer.id,
+            # days=days
         )
         db.add(day)
         await db.commit()

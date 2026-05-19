@@ -24,7 +24,9 @@ async def upload_excel(
         base_name = file.filename.rsplit(".", 1)[0].strip()
         parts = base_name.split("_")
         field_name = parts[0]
-        year = int(parts[1]) if len(parts) > 1 else 2025
+        year = int(parts[1]) 
+        if year < 2000:
+            return JSONResponse({"error": "Имя файла должно быть вида Урманское_2025.xlsx"}, status_code=400)
     except (IndexError, ValueError):
         return JSONResponse({"error": "Имя файла должно быть вида Урманское_2025.xlsx"}, status_code=400)
 
@@ -117,8 +119,8 @@ async def upload_excel(
                     customer_id=customer_id,
                     full_name=rec["full_name"],
                     position=rec.get("position", ""),
-                    check_in=rec["check_in"],
-                    check_out=rec["check_out"],
+                    check_in=rec["check_in"] or None,
+                    check_out=rec["check_out"] or None,
                     gender=gender,
                     room_id=room_id,
                     shift=rec.get("смена", ""),
@@ -132,7 +134,8 @@ async def upload_excel(
                     extra=rec["check_out"],
                     customer_id=customer_id,
                     room_id=room_id,
-                    workplace_id=workplace_id
+                    workplace_id=workplace_id,
+                    days=rec['days']
                 ))
                 pending += 1
                 if pending >= 50:

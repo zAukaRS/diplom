@@ -3,6 +3,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
+
 def create_report(dict_list: list, output_filename: str, sheet_name='расч.л'):
     if not os.path.exists('excel_files'):
         os.makedirs('excel_files')
@@ -14,7 +15,7 @@ def create_report(dict_list: list, output_filename: str, sheet_name='расч.л
     ws.title = sheet_name
 
     headers = ['Месторождение', 'Заказчик', 'ФИО проживающего',
-               'Дата заезда', 'Дата выезда', 'Количество дней']
+               'Дата заезда', 'Дата выезда', 'Количество дней', 'Рассечт за жилье']
     ws.append(headers)
 
     for row in dict_list:
@@ -23,8 +24,9 @@ def create_report(dict_list: list, output_filename: str, sheet_name='расч.л
             row['Заказчик'],
             row['ФИО проживающего'],
             row['Дата заезда'].strftime("%d.%m.%Y"),
-            row['Дата выезда'].strftime("%d.%m.%Y") if row['Дата выезда'] else "—",
-            row['Количество дней']
+            row['Дата выезда'].strftime("%d.%m.%Y"),
+            row['Количество дней'],
+            int(row['Количество дней'])*500 # 'Рассечт за жилье'
         ])
 
     border = Border(
@@ -47,8 +49,10 @@ def create_report(dict_list: list, output_filename: str, sheet_name='расч.л
             cell.border = border
             if i in (4, 5, 6):
                 cell.fill = PatternFill(start_color="86D472", end_color="86D472", fill_type="solid")
+            elif i == 7:
+                cell.fill = PatternFill(start_color="ffff00", end_color="ffff00", fill_type="solid")
 
-    widths = [25, 25, 30, 15, 15, 20]
+    widths = [25, 25, 30, 15, 15, 20, 20]
     for i, width in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = width
 

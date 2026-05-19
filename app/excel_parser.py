@@ -77,7 +77,7 @@ def _contiguous_blocks(
       2. Значение меняется (другой заказчик)
       3. Цвет заливки меняется (тот же заказчик, но другой жилец)
     """
-    blocks: list[tuple[int, int, str]] = []
+    blocks: list[tuple[int, int, str,str,int]] = []
     in_block = False
     start = 0
     cur_val = None
@@ -99,7 +99,7 @@ def _contiguous_blocks(
             color_changed = (color != cur_color) and (color is not None or cur_color is not None)
 
             if val_changed or color_changed:
-                blocks.append((start + 1, i, cur_val))
+                blocks.append((start + 1, i, cur_val,cur_color,i-start))
                 if v is not None:
                     start = i
                     cur_val = v
@@ -108,7 +108,7 @@ def _contiguous_blocks(
                     in_block = False
 
     if in_block:
-        blocks.append((start + 1, len(day_cells), cur_val))
+        blocks.append((start + 1, len(day_cells), cur_val,cur_color,len(day_cells)-start))
 
     return blocks
 
@@ -221,7 +221,10 @@ def parse_sheet(
         n = len(names)
         positions = _split_slash(position_raw, n)
 
-        if n == 1 or len(blocks) < n:
+        if n == 1:
+            dayss  : int = 0
+            for x in blocks:
+                dayss += x[-1]
             # Один жилец ИЛИ блоков меньше чем имён — весь диапазон общий
             all_start = blocks[0][0]
             all_end = blocks[-1][1]
@@ -241,16 +244,28 @@ def parse_sheet(
                     "customer": combined_customer,
                     "check_in": check_in,
                     "check_out": check_out,
-                    "days": (check_out - check_in).days + 1,
+                    "days": dayss,
                     "room_unique_id" : ctx_room_unique,
                     "workplace" : cv(40)
                 }
         else:
             # N имён ↔ N блоков
+            bocks = [(blocks[0])]
+            if len(blocks) > n:
+                color_st = blocks[0][-2]
+                for x in range(1,len(blocks)):
+                    if blocks[x][-2] == color_st and color_st is not None:
+                        bocks[-1] = (bocks[-1][0],blocks[x][1],bocks[-1][2],color_st,bocks[-1][-1]+blocks[x][-1])
+                    else:
+                        bocks.append(blocks[x])
+                    color_st = blocks[x][-2]
+
+                blocks = bocks if len(bocks) == n else []
+
             for i, name in enumerate(names):
-                if i >= len(blocks):
+                if len(blocks) != n:
                     break
-                b_start, b_end, customer = blocks[i]
+                b_start, b_end, customer = blocks[i][0],blocks[i][1],blocks[i][2]
                 check_in = date(year, month, b_start)
                 check_out = date(year, month, min(b_end, _days_in_month(year, month)))
                 yield {

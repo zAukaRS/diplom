@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path as PathLib
@@ -6,7 +5,10 @@ from starlette.templating import Jinja2Templates
 from .routers import auth, users, pages, residents, days, excel, report, fields, customers, admins, current_user
 
 app = FastAPI()
+
 # uvicorn app.main:app --reload
+
+
 # Подключаем роутеры
 app.include_router(auth.router)
 app.include_router(users.router)
