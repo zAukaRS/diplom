@@ -4,15 +4,19 @@
     <meta charset="UTF-8">
     <title>Административная система общежитий</title>
     <link rel="stylesheet" href="css/style.css">
+    <!-- Библиотека для Excel (если понадобится экспорт) -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
 <div class="container">
 
+    <!-- Боковое меню -->
     <aside class="sidebar">
         <h2>Админ-панель</h2>
         <ul>
-            <li>Главная</li>
+            <li id="mainMenuLink">Главная</li>
+            <li id="overtimeReportLink">Отчёт по переработкам</li>
             <li>Отчёты</li>
             <li>Комнаты</li>
             <li>Общежития</li>
@@ -20,111 +24,114 @@
             <li><a href="/logout">Выход</a></li>
         </ul>
     </aside>
-    
+
+    <!-- Основной контент -->
     <div class="main-content">
-        <header>
-            <h1>Система управления общежитиями</h1>
-        </header>
-        
-        <section class="cards">
-            <div class="card">
-                <h2>72%</h2>
-                <p>Средняя загрузка</p>
-            </div>
-            <div class="card">
-                <h2>87</h2>
-                <p>Текущих проживающих</p>
-            </div>
-            <div class="card">
-                <h2>33</h2>
-                <p>Свободных мест</p>
-            </div>
-            <div class="card">
-                <h2>12</h2>
-                <p>Выселений за месяц</p>
-            </div>
-        </section>
 
-        <section class="report-section">
-            <h2>Сформировать отчёт</h2>
-            <div class="report-form">
-                <label>С:</label>
-                <input type="date" id="dateFrom">
-                <label>По:</label>
-                <input type="date" id="dateTo">
-                <button onclick="downloadReport()">Сформировать</button>
-            </div>
-        </section>
+        <!-- Секции, видимые по умолчанию (Главная) -->
+        <div id="defaultSections">
+            <header>
+                <h1>Система управления общежитиями</h1>
+            </header>
 
-        <section class="table-section">
-            <div class="filters compact">
-                <!-- Поиск по слову -->
-                <input type="text" id="searchWord" placeholder="Поиск по ФИО, должности..." class="filter-select">
-                
-                <select id="fieldFilter" class="filter-select">
-                    <option value="">Месторождение</option>
-                </select>
-            
-                <select id="yearFilter" class="filter-select">
-                    <option value="2024">2024</option>
-                    <option value="2025" selected>2025</option>
-                    <option value="2026">2026</option>
-                </select>
-                
-                <select id="monthFilter" class="filter-select">
-                    <option value="1">Янв</option>
-                    <option value="2">Фев</option>
-                    <option value="3">Мар</option>
-                    <option value="4">Апр</option>
-                    <option value="5">Май</option>
-                    <option value="6">Июн</option>
-                    <option value="7">Июл</option>
-                    <option value="8">Авг</option>
-                    <option value="9">Сен</option>
-                    <option value="10">Окт</option>
-                    <option value="11">Ноя</option>
-                    <option value="12">Дек</option>
-                </select>
-                
-                <!-- Кнопки -->
-                <button onclick="loadCalendar()" class="btn-compact">Показать</button>
-                <button onclick="searchResidents()" class="btn-compact">🔍 Поиск</button>
-                <button onclick="clearSearch()" class="btn-compact">✖ Сброс</button>
-            </div>
+            <!-- Карточки -->
+            <section class="cards">
+                <div class="card">
+                    <h2>72%</h2>
+                    <p>Средняя загрузка</p>
+                </div>
+                <div class="card">
+                    <h2>87</h2>
+                    <p>Текущих проживающих</p>
+                </div>
+                <div class="card">
+                    <h2>33</h2>
+                    <p>Свободных мест</p>
+                </div>
+                <div class="card">
+                    <h2>12</h2>
+                    <p>Выселений за месяц</p>
+                </div>
+            </section>
 
-            <div class="table-header">
-                <h2>Отчёт по проживающим</h2>
-                <button id="editModeBtn" onclick="toggleEditMode()" class="stardartButton">Режим редактирования</button>
-                <button id="addResidentBtn" class="stardartButton">Добавить запись</button>
-                <input type="file" id="excelFile" accept=".xlsx,.xls" style="display:inline-block; margin-right:10px;">
-                <button onclick="uploadExcel()" class="stardartButton" type="button">Загрузить Excel</button>
-            </div>
+            <!-- Форма обычного отчёта -->
+            <section class="report-section">
+                <h2>Сформировать отчёт</h2>
+                <div class="report-form">
+                    <label>С:</label>
+                    <input type="date" id="dateFrom">
+                    <label>По:</label>
+                    <input type="date" id="dateTo">
+                    <button onclick="downloadReport()">Сформировать</button>
+                </div>
+            </section>
 
-            <table>
-                <thead id="calendarHead"></thead>
-                <tbody id="calendarBody"></tbody>
-            </table>
-        </section>
-    </div>
-</div>
+            <!-- Таблица с проживающими -->
+            <section class="table-section">
+                <div class="filters compact">
+                    <input type="text" id="searchWord" placeholder="Поиск по ФИО, должности..." class="filter-select">
+                    <select id="fieldFilter" class="filter-select">
+                        <option value="">Месторождение</option>
+                    </select>
+                    <select id="yearFilter" class="filter-select">
+                        <option value="2024">2024</option>
+                        <option value="2025" selected>2025</option>
+                        <option value="2026">2026</option>
+                    </select>
+                    <select id="monthFilter" class="filter-select">
+                        <option value="1">Янв</option>
+                        <option value="2">Фев</option>
+                        <option value="3">Мар</option>
+                        <option value="4">Апр</option>
+                        <option value="5">Май</option>
+                        <option value="6">Июн</option>
+                        <option value="7">Июл</option>
+                        <option value="8">Авг</option>
+                        <option value="9">Сен</option>
+                        <option value="10">Окт</option>
+                        <option value="11">Ноя</option>
+                        <option value="12">Дек</option>
+                    </select>
+                    <button onclick="loadCalendar()" class="btn-compact">Показать</button>
+                    <button onclick="searchResidents()" class="btn-compact">🔍 Поиск</button>
+                    <button onclick="clearSearch()" class="btn-compact">✖ Сброс</button>
+                </div>
+
+                <div class="table-header">
+                    <h2>Отчёт по проживающим</h2>
+                    <button id="editModeBtn" onclick="toggleEditMode()" class="stardartButton">Режим редактирования</button>
+                    <button id="addResidentBtn" class="stardartButton">Добавить запись</button>
+                    <input type="file" id="excelFile" accept=".xlsx,.xls" style="display:inline-block; margin-right:10px;">
+                    <button onclick="uploadExcel()" class="stardartButton" type="button">Загрузить Excel</button>
+                </div>
+
+                <table>
+                    <thead id="calendarHead"></thead>
+                    <tbody id="calendarBody"></tbody>
+                </table>
+            </section>
+        </div>
+
+        <!-- Блок для отчёта по переработкам (изначально скрыт) -->
+        <div id="overtimeContainer" style="display: none;">
+            <section class="report-section">
+                <h2>📊 Отчёт по переработкам</h2>
+                <div class="report-form">
+                    <label>Дата начала:</label>
+                    <input type="date" id="overtimeStartDate">
+                    <label>Дата окончания:</label>
+                    <input type="date" id="overtimeEndDate">
+                    <label>Норма дней:</label>
+                    <input type="number" id="normDays" value="15" style="width: 80px;">
+                    <button id="generateOvertimeBtn" class="btn-compact">Сформировать отчёт (Excel)</button>
+                    <button id="backToMainBtn" class="btn-compact" style="background-color: #6c757d;">← Назад</button>
+                </div>
+            </section>
+        </div>
+
+    </div> <!-- .main-content -->
+</div> <!-- .container -->
 
 <script src="js/app.js"></script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

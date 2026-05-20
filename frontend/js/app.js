@@ -1,4 +1,4 @@
-// ===== JWT АВТОРИЗАЦИЯ =====
+// ===== JWT АВТОРИЗАЦИЯ ===== (ваш существующий код)
 function getToken() { return localStorage.getItem("access_token"); }
 function setTokens(access, refresh) {
     localStorage.setItem("access_token", access);
@@ -145,7 +145,7 @@ function toggleEditMode() {
     if (month && year) loadCalendar();
 }
 async function loadCalendar() {
-    await loadCustomers();   // обновляем список заказчиков для селектов
+    await loadCustomers();
     const fieldSelect = document.getElementById("fieldFilter");
     const fieldId = fieldSelect?.value || "";
     const word = document.getElementById("searchWord")?.value || "";
@@ -174,30 +174,24 @@ async function loadCalendar() {
             tbody.innerHTML = '<tr><td colspan="20" style="text-align:center; padding:20px;">Ничего не найдено</td></tr>';
             return;
         }
-        // Функция для получения ID заказчика по имени (нужно для селекта в режиме редактирования)
         const getCustomerIdByName = (name) => {
             const c = customers.find(c => c.name === name);
             return c ? c.id : null;
         };
         residents.forEach(r => {
             const row = document.createElement("tr");
-            // Расположение
             const tdLocation = document.createElement("td");
             tdLocation.textContent = r.room_location || "";
             row.appendChild(tdLocation);
-            // Путь
             const tdPath = document.createElement("td");
             tdPath.textContent = r.room_path || "";
             row.appendChild(tdPath);
-            // № комнаты
             const tdRoomNumber = document.createElement("td");
             tdRoomNumber.textContent = r.room_number || "";
             row.appendChild(tdRoomNumber);
-            // К-во мест (у тебя всегда пусто, но оставим)
             const tdCapacity = document.createElement("td");
             tdCapacity.textContent = r.room_capacity || "";
             row.appendChild(tdCapacity);
-            // Пол
             const tdGender = document.createElement("td");
             if (editMode) {
                 tdGender.appendChild(makeEditSelect(GENDER_OPTIONS, r.gender, r.id, "gender"));
@@ -205,11 +199,9 @@ async function loadCalendar() {
                 tdGender.textContent = r.gender || "";
             }
             row.appendChild(tdGender);
-            // ФИО
             const tdName = document.createElement("td");
             tdName.textContent = r.full_name || "";
             row.appendChild(tdName);
-            // Должность
             const tdPosition = document.createElement("td");
             if (editMode) {
                 tdPosition.appendChild(makeEditSelect(POSITION_OPTIONS, r.position, r.id, "position"));
@@ -217,7 +209,6 @@ async function loadCalendar() {
                 tdPosition.textContent = r.position || "";
             }
             row.appendChild(tdPosition);
-            // Смена
             const tdShift = document.createElement("td");
             if (editMode) {
                 tdShift.appendChild(makeEditSelect(SHIFT_OPTIONS, r.shift, r.id, "shift"));
@@ -225,7 +216,6 @@ async function loadCalendar() {
                 tdShift.textContent = r.shift || "";
             }
             row.appendChild(tdShift);
-            // Дни месяца
             for (let i = 1; i <= days; i++) {
                 const selectedId = r.days_info?.[i] || "";
                 const td = document.createElement("td");
@@ -239,11 +229,9 @@ async function loadCalendar() {
                 td.appendChild(select);
                 row.appendChild(td);
             }
-            // Заказчик (колонка после дней) – только для отображения, НЕ редактируем
             const tdCustomer = document.createElement("td");
             tdCustomer.textContent = r.customer || "";
             row.appendChild(tdCustomer);
-            // Месторождение
             const tdField = document.createElement("td");
             tdField.textContent = r.field || "";
             row.appendChild(tdField);
@@ -370,7 +358,6 @@ function addNewRow() {
     if (!head?.innerHTML?.trim()) generateCalendar(days);
     const row = document.createElement("tr");
     row.id = "new-resident-row";
-    // Расположение
     const tdLocation = document.createElement("td");
     const locationSelect = document.createElement("select");
     locationSelect.dataset.field = "location";
@@ -380,7 +367,6 @@ function addNewRow() {
                                 <option value="Вагон">Вагон</option>`;
     tdLocation.appendChild(locationSelect);
     row.appendChild(tdLocation);
-    // Путь
     const tdPath = document.createElement("td");
     const pathInput = document.createElement("input");
     pathInput.type = "text";
@@ -390,7 +376,6 @@ function addNewRow() {
     pathInput.style.width = "100%";
     tdPath.appendChild(pathInput);
     row.appendChild(tdPath);
-    // № комнаты
     const tdRoomNumber = document.createElement("td");
     const roomNumberInput = document.createElement("input");
     roomNumberInput.type = "text";
@@ -400,7 +385,6 @@ function addNewRow() {
     roomNumberInput.style.width = "100%";
     tdRoomNumber.appendChild(roomNumberInput);
     row.appendChild(tdRoomNumber);
-    // К-во мест
     const tdCapacity = document.createElement("td");
     const capacityInput = document.createElement("input");
     capacityInput.type = "number";
@@ -410,11 +394,9 @@ function addNewRow() {
     capacityInput.style.width = "100%";
     tdCapacity.appendChild(capacityInput);
     row.appendChild(tdCapacity);
-    // Пол
     const tdGender = document.createElement("td");
     tdGender.appendChild(makeEditSelectNew(GENDER_OPTIONS, "gender"));
     row.appendChild(tdGender);
-    // ФИО + кнопка сохранить
     const tdName = document.createElement("td");
     const nameInput = document.createElement("input");
     nameInput.type = "text";
@@ -430,15 +412,12 @@ function addNewRow() {
     tdName.appendChild(nameInput);
     tdName.appendChild(saveBtn);
     row.appendChild(tdName);
-    // Должность
     const tdPosition = document.createElement("td");
     tdPosition.appendChild(makeEditSelectNew(POSITION_OPTIONS, "position"));
     row.appendChild(tdPosition);
-    // Смена
     const tdShift = document.createElement("td");
     tdShift.appendChild(makeEditSelectNew(SHIFT_OPTIONS, "shift"));
     row.appendChild(tdShift);
-    // Дни месяца
     for (let i = 1; i <= days; i++) {
         const td = document.createElement("td");
         const select = document.createElement("select");
@@ -449,7 +428,6 @@ function addNewRow() {
         td.appendChild(select);
         row.appendChild(td);
     }
-    // Заказчик (правая колонка) – тоже селект
     const tdCustomer = document.createElement("td");
     const custSelect = document.createElement("select");
     custSelect.dataset.field = "customer";
@@ -458,7 +436,6 @@ function addNewRow() {
         customers.map(c => `<option value="${c.name}">${c.name}</option>`).join("");
     tdCustomer.appendChild(custSelect);
     row.appendChild(tdCustomer);
-    // Месторождение
     const tdField = document.createElement("td");
     const fieldSelect = document.createElement("select");
     fieldSelect.dataset.field = "field";
@@ -494,7 +471,6 @@ async function saveNewRow(row, month, year) {
     if (!customer) { alert("Выберите заказчика!"); return; }
     const room_unique_id = getValue("room_unique_id");
     if (!room_unique_id) { alert("Укажите количество мест в комнате!"); return; }
-    // Валидация дней
     const daySelects = row.querySelectorAll(".day-select-new");
     const filled = Array.from(daySelects)
         .map(sel => ({ day: parseInt(sel.dataset.day), customerId: sel.value }))
@@ -545,7 +521,6 @@ async function saveNewRow(row, month, year) {
             return;
         }
         const residentId = result.resident_id;
-        // Сохраняем выбранные дни
         for (const sel of daySelects) {
             if (sel.value) {
                 await apiFetch("/api/update_day", {
@@ -592,11 +567,71 @@ async function uploadExcel() {
         alert("Ошибка загрузки: " + err.message);
     }
 }
+// ===== НОВЫЙ РАЗДЕЛ: ОТЧЁТ ПО ПЕРЕРАБОТКАМ =====
+function toggleMainView(showOvertime) {
+    const defaultSections = document.getElementById("defaultSections");
+    const overtimeContainer = document.getElementById("overtimeContainer");
+    if (showOvertime) {
+        defaultSections.style.display = "none";
+        overtimeContainer.style.display = "block";
+        // Установить даты по умолчанию: текущий месяц
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0,10);
+        const startInput = document.getElementById("overtimeStartDate");
+        const endInput = document.getElementById("overtimeEndDate");
+        if (startInput && !startInput.value) startInput.value = firstDay;
+        if (endInput && !endInput.value) endInput.value = lastDay;
+    } else {
+        defaultSections.style.display = "block";
+        overtimeContainer.style.display = "none";
+    }
+}
+
+// Переключение между основной таблицей и отчётом по переработкам
+function toggleMainView(showOvertime) {
+    const defaultSections = document.getElementById("defaultSections");
+    const overtimeContainer = document.getElementById("overtimeContainer");
+    if (showOvertime) {
+        defaultSections.style.display = "none";
+        overtimeContainer.style.display = "block";
+        // Установить даты по умолчанию: текущий месяц
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0,10);
+        const startInput = document.getElementById("overtimeStartDate");
+        const endInput = document.getElementById("overtimeEndDate");
+        if (startInput && !startInput.value) startInput.value = firstDay;
+        if (endInput && !endInput.value) endInput.value = lastDay;
+    } else {
+        defaultSections.style.display = "block";
+        overtimeContainer.style.display = "none";
+    }
+}
+
+// Скачивание отчёта по переработкам
+function downloadOvertimeReport() {
+    const startDate = document.getElementById("overtimeStartDate").value;
+    const endDate = document.getElementById("overtimeEndDate").value;
+    if (!startDate || !endDate) {
+        alert("Выберите обе даты!");
+        return;
+    }
+    const normDays = document.getElementById("normDays").value || 15;
+    // (опционально) можно добавить выбор месторождения, если нужно
+    // const fieldName = document.getElementById("overtimeFieldFilter")?.value || "";
+    let url = `/api/get_overtime_report?date_from=${startDate}&date_to=${endDate}&norm_days=${normDays}`;
+    // if (fieldName) url += `&field_name=${encodeURIComponent(fieldName)}`;
+    
+    // Открываем в новой вкладке – браузер скачает Excel-файл
+    window.open(url, '_blank');
+}
+
 // ===== ОБРАБОТЧИКИ =====
 document.addEventListener("change", async (e) => {
     if (e.target.classList.contains("day-select")) await saveDay(e.target);
 });
-// ===== ИНИЦИАЛИЗАЦИЯ =====
+
 document.addEventListener("DOMContentLoaded", async function () {
     if (!getToken()) { window.location.href = "/login"; return; }
     await loadFields();
@@ -610,4 +645,15 @@ document.addEventListener("DOMContentLoaded", async function () {
     if (addBtn) addBtn.addEventListener("click", addNewRow);
     initDragFill();
     await loadCalendar();
+
+    // Переключение между основной таблицей и отчётом по переработкам
+    const mainLink = document.getElementById("mainMenuLink");
+    const overtimeLink = document.getElementById("overtimeReportLink");
+    const generateBtn = document.getElementById("generateOvertimeBtn");
+    const backBtn = document.getElementById("backToMainBtn");
+
+    if (mainLink) mainLink.addEventListener("click", () => toggleMainView(false));
+    if (overtimeLink) overtimeLink.addEventListener("click", () => toggleMainView(true));
+    if (generateBtn) generateBtn.addEventListener("click", downloadOvertimeReport);
+    if (backBtn) backBtn.addEventListener("click", () => toggleMainView(false));
 });

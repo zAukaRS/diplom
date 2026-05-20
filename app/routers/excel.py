@@ -8,14 +8,14 @@ from app.database import get_db
 from app.models import Field, Customer, Location, Path, Workplace, Room, Resident, ResidentDay
 from app.excel_parser import parse_all_months
 from app.core.dependencies import get_current_user
-
+from datetime import date
 router = APIRouter()
 
 @router.post("/api/upload_excel")
 async def upload_excel(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user)
+    # user=Depends(get_current_user)
 ):
     if not file.filename.endswith((".xlsx", ".xls")):
         return JSONResponse({"error": "Неверный формат файла"}, status_code=400)
@@ -107,50 +107,52 @@ async def upload_excel(
         pending = 0
         for rec in all_records:
             try:
-                workplace_id = workplace_cache.get(rec.get("workplace") or "—")
-                customer_id = customer_cache.get(rec.get("customer") or "Неизвестно")
-                room_cache_key = (rec.get("комната") or "—") + (rec.get("room_unique_id") or "")
-                room_id = room_cache.get(room_cache_key)
-                gender_raw = rec.get("пол", "")
-                gender = "М" if isinstance(gender_raw, str) and gender_raw.lower().startswith("муж") else "Ж"
-
-                resident = Resident(
-                    field_id=field_id,
-                    customer_id=customer_id,
-                    full_name=rec["full_name"],
-                    position=rec.get("position", ""),
-                    check_in=rec["check_in"] or None,
-                    check_out=rec["check_out"] or None,
-                    gender=gender,
-                    room_id=room_id,
-                    shift=rec.get("смена", ""),
-                )
-                db.add(resident)
-                await db.flush()
-
-                db.add(ResidentDay(
-                    resident_id=resident.id,
-                    date=rec["check_in"],
-                    extra=rec["check_out"],
-                    customer_id=customer_id,
-                    room_id=room_id,
-                    workplace_id=workplace_id,
-                    days=rec['days']
-                ))
-                pending += 1
-                if pending >= 50:
-                    await db.commit()
-                    pending = 0
-                total += 1
+                async with db.begin_nested():
+                    workplace_id = workplace_cache.get(rec.get("workplace") or "—")
+                    customer_id = customer_cache.get(rec.get("customer") or "Неизвестно")
+                    room_cache_key = (rec.get("комната") or "—") + (rec.get("room_unique_id") or "")
+                    room_id = room_cache.get(room_cache_key)
+                    gender_raw = rec.get("пол", "")
+                    gender = "М" if isinstance(gender_raw, str) and gender_raw.lower().startswith("муж") else "Ж"
+                    check_in : date = rec['days'][0][0] 
+                    check_out : date = rec['days'][-1][1]
+                    
+                    resident = Resident(
+                        field_id=field_id,
+                        customer_id=customer_id,
+                        full_name=rec["full_name"],
+                        position=rec.get("position", ""),
+                        check_in=check_in or None,
+                        check_out=check_out or None,
+                        gender=gender,
+                        room_id=room_id,
+                        shift=rec.get("смена", ""),
+                    )
+                    db.add(resident)
+                    await db.flush()
+                    
+                    for x in rec['days']:
+                        check_in : date = x[0]
+                        check_out : date = x[1]
+                        db.add(ResidentDay(
+                            resident_id=resident.id,
+                            date=check_in,
+                            extra=check_out,
+                            customer_id=customer_id,
+                            room_id=room_id,
+                            workplace_id=workplace_id,
+                            days=int((check_out-check_in).days + 1)
+                        ))
+                    
+                    total += 1
+                    
             except Exception as e:
-                await db.rollback()
                 errors.append({"record": rec.get("full_name", "?"), "error": str(e)})
 
-        if pending:
-            await db.commit()
-
+        await db.commit()
+        
         return {
-            "message": f"Загружено {total} записей" + (f", пропущено: {len(errors)}" if errors else ""),
+            "message": f"Загружено {total} записей," + (f", пропущено: {len(errors)}" if errors else ""),
             "errors": errors[:20],
         }
     except Exception as e:

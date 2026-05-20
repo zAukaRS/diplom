@@ -43,22 +43,19 @@ DAY_COL_END   = 39  # колонка AM = день 31 (включительно)
 
 
 def _cell_color(cell: Cell) -> str | None:
-    """
-    Возвращает RGB-строку цвета заливки ячейки ('FFFF00', 'FF0000', ...)
-    или None если заливки нет / прозрачная.
-    """
     try:
         fill = cell.fill
         if fill.fill_type == "solid":
             color = fill.fgColor
             if color.type == "rgb":
-                rgb = color.rgb  # вида 'FFRRGGBB' или 'RRGGBB'
-                # Убираем alpha-канал если есть, и отсеиваем "нет цвета"
+                rgb = color.rgb
                 rgb_clean = rgb[-6:] if len(rgb) == 8 else rgb
                 if rgb_clean not in ("000000", "FFFFFF", "ffffff"):
                     return rgb_clean
             elif color.type == "theme":
-                # theme-цвет тоже считаем маркером — кодируем как строку
+                # theme:0 с нулевым tint = дефолтный цвет, игнорируем
+                if color.theme == 0 and abs(color.tint) < 0.001:
+                    return None
                 return f"theme:{color.theme}:{color.tint:.3f}"
     except Exception:
         pass
@@ -67,7 +64,7 @@ def _cell_color(cell: Cell) -> str | None:
 
 def _contiguous_blocks(
     day_cells: list[Cell],
-) -> list[tuple[int, int, str]]:
+) -> list[tuple[int, int, str | None, str | None, int]]:
     """
     Возвращает список (day_start, day_end, customer) непрерывных блоков.
     day_start и day_end – номера дней (1-based), оба включительно.
@@ -85,6 +82,8 @@ def _contiguous_blocks(
 
     for i, cell in enumerate(day_cells):
         v = cell.value
+        if isinstance(v, str):
+            v = v.strip() or None
         color = _cell_color(cell)
 
         if v is not None and not in_block:
@@ -107,7 +106,7 @@ def _contiguous_blocks(
                 else:
                     in_block = False
 
-    if in_block:
+    if in_block and cur_val is not None:
         blocks.append((start + 1, len(day_cells), cur_val,cur_color,len(day_cells)-start))
 
     return blocks
@@ -125,7 +124,32 @@ def _split_slash(value: str | None, n: int) -> list[str]:
         parts.append(parts[-1])
     return parts
 
+def merge_1(blocks : list[tuple[int, int, str | None, str | None, int]],n : int) -> dict[int,list[tuple[int, int, str | None, str | None, int]]]:
+    i = 1 
+    bock_for_d = {0: [blocks[0]]} # если в i (где i это for i in merge блоки) есть несколько частей
+    if len(blocks) >= n:
+        color_st = blocks[0][-2]
+        for x in range(1, len(blocks)):
+            if blocks[x][-2] == color_st and color_st is not None:
+                bock_for_d[i-1].append(blocks[x])
+            else:
+                i += 1
+                bock_for_d[i-1] = [blocks[x]]
+            color_st = blocks[x][-2]
+    return bock_for_d
 
+def curr_cust_and_date(
+    blocks: list[tuple[int, int, str | None, str | None, int]],
+    n: int
+) -> dict[int, list[tuple[int, int, str | None, str | None, int]]] | None:
+    if len(blocks) >= n:
+        bock_for_d = merge_1(blocks,n)
+        if len(bock_for_d) == n:
+            return bock_for_d
+        else:
+            return None
+    else:
+        return None
 
 def parse_sheet(
     wb_or_path,
@@ -220,72 +244,60 @@ def parse_sheet(
         names = [n.strip() for n in fio_raw.split("/") if n.strip()]
         n = len(names)
         positions = _split_slash(position_raw, n)
-
+        
         if n == 1:
-            dayss  : int = 0
-            for x in blocks:
-                dayss += x[-1]
-            # Один жилец ИЛИ блоков меньше чем имён — весь диапазон общий
-            all_start = blocks[0][0]
-            all_end = blocks[-1][1]
-            combined_customer = blocks[0][2]  # первый заказчик (упрощение)
-            for i, name in enumerate(names):
-                check_in = date(year, month, all_start)
-                check_out = date(year, month, min(all_end, _days_in_month(year, month)))
-                yield {
+            dates = []
+            customer = blocks[0][2]
+            for k in blocks:
+                dates.append((
+                    date(year, month, k[0]),
+                    date(year, month, min(k[1], _days_in_month(year, month)))
+                ))
+            yield {
                     "расположение": ctx_location,
                     "путь": ctx_path,
                     "комната": ctx_room,
-                    "мест": ctx_seats[:-1],
+                    "мест": ctx_seats,
                     "пол": cv(4) or "",
                     "смена": shift,
-                    "full_name": name,
-                    "position": positions[i],
-                    "customer": combined_customer,
-                    "check_in": check_in,
-                    "check_out": check_out,
-                    "days": dayss,
-                    "room_unique_id" : ctx_room_unique,
-                    "workplace" : cv(40)
+                    "full_name": names[0],
+                    "position": positions[0],
+                    "customer": customer,
+                    "days": dates,
+                    "room_unique_id": ctx_room_unique,
+                    "workplace": cv(40)
                 }
         else:
-            # N имён ↔ N блоков
-            bocks = [(blocks[0])]
-            if len(blocks) > n:
-                color_st = blocks[0][-2]
-                for x in range(1,len(blocks)):
-                    if blocks[x][-2] == color_st and color_st is not None:
-                        bocks[-1] = (bocks[-1][0],blocks[x][1],bocks[-1][2],color_st,bocks[-1][-1]+blocks[x][-1])
-                    else:
-                        bocks.append(blocks[x])
-                    color_st = blocks[x][-2]
-
-                blocks = bocks if len(bocks) == n else []
-
+            # ---- несколько жильцов ----
+            res = curr_cust_and_date(blocks,n)
+            # Определяем, брать i-й блок 
             for i, name in enumerate(names):
-                if len(blocks) != n:
+                dates = []
+                if res is None:
                     break
-                b_start, b_end, customer = blocks[i][0],blocks[i][1],blocks[i][2]
-                check_in = date(year, month, b_start)
-                check_out = date(year, month, min(b_end, _days_in_month(year, month)))
+                print(name,month,blocks,res[i])
+                customer = res[i][0][2]
+                for k in res[i]:
+                    dates.append((
+                        date(year, month, k[0]),
+                        date(year, month, min(k[1], _days_in_month(year, month)))
+                    ))
                 yield {
-                    "расположение": ctx_location,
-                    "путь": ctx_path,
-                    "комната": ctx_room,
-                    "мест": ctx_seats[:-1],
-                    "пол": cv(4),
-                    "смена": shift,
-                    "full_name": name,
-                    "position": positions[i],
-                    "customer": customer,
-                    "check_in": check_in,
-                    "check_out": check_out,
-                    "days": (check_out - check_in).days + 1,
-                    "room_unique_id" : ctx_room_unique,
-                    "workplace" : cv(40)
-                }
+                        "расположение": ctx_location,
+                        "путь": ctx_path,
+                        "комната": ctx_room,
+                        "мест": ctx_seats,
+                        "пол": cv(4),
+                        "смена": shift,
+                        "full_name": name,
+                        "position": positions[i],
+                        "customer": customer,
+                        "days": dates,
+                        "room_unique_id": ctx_room_unique,
+                        "workplace": cv(40),
+                    }
 
-
+    
 def _days_in_month(year: int, month: int) -> int:
     if month == 12:
         return 31
