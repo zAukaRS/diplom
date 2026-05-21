@@ -244,6 +244,8 @@ def parse_sheet(
         names = [n.strip() for n in fio_raw.split("/") if n.strip()]
         n = len(names)
         positions = _split_slash(position_raw, n)
+        for k in blocks:
+            print(names,month,min(k[1], _days_in_month(year, month)))
         
         if n == 1:
             dates = []
@@ -275,7 +277,7 @@ def parse_sheet(
                 dates = []
                 if res is None:
                     break
-                print(name,month,blocks,res[i])
+                
                 customer = res[i][0][2]
                 for k in res[i]:
                     dates.append((

@@ -3,7 +3,12 @@ body {
     font-family: Arial, sans-serif;
     background-color: #f1f5f9;
 }
-
+.loader {
+    text-align: center;
+    padding: 20px;
+    font-style: italic;
+    color: #2563eb;
+}
 .container {
     display: flex;
 }

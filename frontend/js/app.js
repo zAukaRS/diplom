@@ -1,4 +1,4 @@
-// ===== JWT АВТОРИЗАЦИЯ ===== (ваш существующий код)
+// ===== JWT АВТОРИЗАЦИЯ =====
 function getToken() { return localStorage.getItem("access_token"); }
 function setTokens(access, refresh) {
     localStorage.setItem("access_token", access);
@@ -69,6 +69,15 @@ const SHIFT_OPTIONS = ["", "дневная", "ночная"];
 const POSITION_OPTIONS = ["", "Пекарь", "Повар", "Слесарь-ремонтник", "Инженер", "Техник", "Механик", "Электрик", "Оператор", "Мастер", "Рабочий"];
 let customers = [];
 let fieldsList = [];
+// Пагинация
+let currentOffset = 0;
+let currentLimit = 30;
+let isLoading = false;
+let hasMore = true;
+let currentMonth = null;
+let currentYear = null;
+let currentFieldId = "";
+let currentWord = "";
 // ===== ЗАГРУЗКА ДАННЫХ =====
 async function loadCustomers() {
     try {
@@ -119,11 +128,11 @@ function generateCalendar(days) {
     row += "</table>";
     head.innerHTML = row;
 }
-function searchResidents() { loadCalendar(); }
+function searchResidents() { loadCalendar(true); }
 function clearSearch() {
     document.getElementById("searchWord").value = "";
     document.getElementById("fieldFilter").value = "";
-    loadCalendar();
+    loadCalendar(true);
 }
 function downloadReport() {
     const dateFrom = document.getElementById("dateFrom")?.value;
@@ -140,110 +149,67 @@ function toggleEditMode() {
         btn.style.background = editMode ? "#4CAF50" : "";
         btn.style.color = editMode ? "white" : "";
     }
-    const month = document.getElementById("monthFilter")?.value;
-    const year = document.getElementById("yearFilter")?.value;
-    if (month && year) loadCalendar();
+    loadCalendar(true); // перезагрузить таблицу с новым режимом
 }
-async function loadCalendar() {
-    await loadCustomers();
-    const fieldSelect = document.getElementById("fieldFilter");
-    const fieldId = fieldSelect?.value || "";
-    const word = document.getElementById("searchWord")?.value || "";
-    const year = document.getElementById("yearFilter")?.value || "2025";
-    const month = document.getElementById("monthFilter")?.value || "1";
-    const days = daysInMonth(month, year);
-    generateCalendar(days);
-    let url = `/api/residents?`;
-    const params = [];
-    if (fieldId) params.push(`by_field=${fieldId}`);
-    if (word) params.push(`word=${encodeURIComponent(word)}`);
-    url += params.join("&");
-    try {
-        const response = await apiFetch(url);
-        if (!response) return;
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const residents = await response.json();
-        const tbody = document.getElementById("calendarBody");
-        if (!tbody) return;
-        tbody.innerHTML = "";
-        if (residents.error) {
-            tbody.innerHTML = `<tr><td colspan="20" style="text-align:center; padding:20px;">${residents.error}</td></tr>`;
-            return;
-        }
-        if (!residents || !residents.length) {
-            tbody.innerHTML = '<tr><td colspan="20" style="text-align:center; padding:20px;">Ничего не найдено</td></tr>';
-            return;
-        }
-        const getCustomerIdByName = (name) => {
-            const c = customers.find(c => c.name === name);
-            return c ? c.id : null;
-        };
-        residents.forEach(r => {
-            const row = document.createElement("tr");
-            const tdLocation = document.createElement("td");
-            tdLocation.textContent = r.room_location || "";
-            row.appendChild(tdLocation);
-            const tdPath = document.createElement("td");
-            tdPath.textContent = r.room_path || "";
-            row.appendChild(tdPath);
-            const tdRoomNumber = document.createElement("td");
-            tdRoomNumber.textContent = r.room_number || "";
-            row.appendChild(tdRoomNumber);
-            const tdCapacity = document.createElement("td");
-            tdCapacity.textContent = r.room_capacity || "";
-            row.appendChild(tdCapacity);
-            const tdGender = document.createElement("td");
-            if (editMode) {
-                tdGender.appendChild(makeEditSelect(GENDER_OPTIONS, r.gender, r.id, "gender"));
-            } else {
-                tdGender.textContent = r.gender || "";
-            }
-            row.appendChild(tdGender);
-            const tdName = document.createElement("td");
-            tdName.textContent = r.full_name || "";
-            row.appendChild(tdName);
-            const tdPosition = document.createElement("td");
-            if (editMode) {
-                tdPosition.appendChild(makeEditSelect(POSITION_OPTIONS, r.position, r.id, "position"));
-            } else {
-                tdPosition.textContent = r.position || "";
-            }
-            row.appendChild(tdPosition);
-            const tdShift = document.createElement("td");
-            if (editMode) {
-                tdShift.appendChild(makeEditSelect(SHIFT_OPTIONS, r.shift, r.id, "shift"));
-            } else {
-                tdShift.textContent = r.shift || "";
-            }
-            row.appendChild(tdShift);
-            for (let i = 1; i <= days; i++) {
-                const selectedId = r.days_info?.[i] || "";
-                const td = document.createElement("td");
-                const select = document.createElement("select");
-                select.className = "day-select";
-                select.dataset.resident = r.id;
-                select.dataset.day = i;
-                select.title = "Выберите заказчика";
-                select.innerHTML = `<option value="">-</option>` +
-                    customers.map(c => `<option value="${c.id}" ${c.id == selectedId ? "selected" : ""}>${c.name}</option>`).join("");
-                td.appendChild(select);
-                row.appendChild(td);
-            }
-            const tdCustomer = document.createElement("td");
-            tdCustomer.textContent = r.customer || "";
-            row.appendChild(tdCustomer);
-            const tdField = document.createElement("td");
-            tdField.textContent = r.field || "";
-            row.appendChild(tdField);
-            tbody.appendChild(row);
-        });
-    } catch (err) {
-        console.error("Ошибка загрузки данных:", err);
-        const tbody = document.getElementById("calendarBody");
-        if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="20" style="text-align:center; padding:20px; color:red;">Ошибка загрузки данных</td></tr>';
-        }
+// Создание строки жильца
+function createResidentRow(r, days, editModeFlag) {
+    const row = document.createElement("tr");
+    const tdLocation = document.createElement("td");
+    tdLocation.textContent = r.room_location || "";
+    row.appendChild(tdLocation);
+    const tdPath = document.createElement("td");
+    tdPath.textContent = r.room_path || "";
+    row.appendChild(tdPath);
+    const tdRoomNumber = document.createElement("td");
+    tdRoomNumber.textContent = r.room_number || "";
+    row.appendChild(tdRoomNumber);
+    const tdCapacity = document.createElement("td");
+    tdCapacity.textContent = r.room_capacity || "";
+    row.appendChild(tdCapacity);
+    const tdGender = document.createElement("td");
+    if (editModeFlag) {
+        tdGender.appendChild(makeEditSelect(GENDER_OPTIONS, r.gender, r.id, "gender"));
+    } else {
+        tdGender.textContent = r.gender || "";
     }
+    row.appendChild(tdGender);
+    const tdName = document.createElement("td");
+    tdName.textContent = r.full_name || "";
+    row.appendChild(tdName);
+    const tdPosition = document.createElement("td");
+    if (editModeFlag) {
+        tdPosition.appendChild(makeEditSelect(POSITION_OPTIONS, r.position, r.id, "position"));
+    } else {
+        tdPosition.textContent = r.position || "";
+    }
+    row.appendChild(tdPosition);
+    const tdShift = document.createElement("td");
+    if (editModeFlag) {
+        tdShift.appendChild(makeEditSelect(SHIFT_OPTIONS, r.shift, r.id, "shift"));
+    } else {
+        tdShift.textContent = r.shift || "";
+    }
+    row.appendChild(tdShift);
+    for (let i = 1; i <= days; i++) {
+        const selectedId = r.days_info?.[i] || "";
+        const td = document.createElement("td");
+        const select = document.createElement("select");
+        select.className = "day-select";
+        select.dataset.resident = r.id;
+        select.dataset.day = i;
+        select.title = "Выберите заказчика";
+        select.innerHTML = `<option value="">-</option>` +
+            customers.map(c => `<option value="${c.id}" ${c.id == selectedId ? "selected" : ""}>${c.name}</option>`).join("");
+        td.appendChild(select);
+        row.appendChild(td);
+    }
+    const tdCustomer = document.createElement("td");
+    tdCustomer.textContent = r.customer || "";
+    row.appendChild(tdCustomer);
+    const tdField = document.createElement("td");
+    tdField.textContent = r.field || "";
+    row.appendChild(tdField);
+    return row;
 }
 function makeEditSelect(options, currentValue, residentId, field) {
     const select = document.createElement("select");
@@ -339,6 +305,102 @@ async function saveDay(selectEl) {
         });
     } catch (err) {
         console.error("Ошибка при сохранении дня:", err);
+    }
+}
+// ===== ПАГИНАЦИЯ И ЗАГРУЗКА ТАБЛИЦЫ =====
+function showLoader(show) {
+    let loader = document.getElementById("tableLoader");
+    if (!loader && show) {
+        const container = document.querySelector(".table-section");
+        loader = document.createElement("div");
+        loader.id = "tableLoader";
+        loader.className = "loader";
+        loader.textContent = "Загрузка...";
+        container.appendChild(loader);
+    }
+    if (loader) loader.style.display = show ? "block" : "none";
+}
+function ensureLoadMoreButton() {
+    if (document.getElementById("loadMoreBtn")) return;
+    const btn = document.createElement("button");
+    btn.id = "loadMoreBtn";
+    btn.textContent = "Загрузить ещё";
+    btn.className = "stardartButton";
+    btn.style.marginTop = "10px";
+    btn.onclick = () => loadCalendar(false);
+    const container = document.querySelector(".table-section");
+    container.appendChild(btn);
+}
+function removeLoadMoreButton() {
+    const btn = document.getElementById("loadMoreBtn");
+    if (btn) btn.remove();
+}
+function clearTable() {
+    const tbody = document.getElementById("calendarBody");
+    if (tbody) tbody.innerHTML = "";
+    removeLoadMoreButton();
+}
+async function loadCalendar(reset = true) {
+    if (isLoading) return;
+    isLoading = true;
+    showLoader(true);
+    const year = document.getElementById("yearFilter")?.value || "2025";
+    const month = document.getElementById("monthFilter")?.value || "1";
+    const fieldId = document.getElementById("fieldFilter")?.value || "";
+    const word = document.getElementById("searchWord")?.value || "";
+    const days = daysInMonth(parseInt(month), parseInt(year));
+    if (reset) {
+        currentOffset = 0;
+        hasMore = true;
+        currentMonth = month;
+        currentYear = year;
+        currentFieldId = fieldId;
+        currentWord = word;
+        generateCalendar(days);
+        clearTable();
+    } else if (
+        month !== currentMonth ||
+        year !== currentYear ||
+        fieldId !== currentFieldId ||
+        word !== currentWord
+    ) {
+        // параметры изменились – сбрасываем
+        loadCalendar(true);
+        isLoading = false;
+        return;
+    }
+    let url = `/api/residents?month=${month}&year=${year}&limit=${currentLimit}&offset=${currentOffset}`;
+    if (fieldId) url += `&by_field=${fieldId}`;
+    if (word) url += `&word=${encodeURIComponent(word)}`;
+    try {
+        const response = await apiFetch(url);
+        if (!response) return;
+        const residents = await response.json();
+        if (!residents || residents.length === 0) {
+            hasMore = false;
+            if (reset && residents.length === 0) {
+                const tbody = document.getElementById("calendarBody");
+                if (tbody) tbody.innerHTML = '<tr><td colspan="20" style="text-align:center;">Ничего не найдено</td></tr>';
+            }
+            removeLoadMoreButton();
+        } else {
+            const tbody = document.getElementById("calendarBody");
+            residents.forEach(r => {
+                const row = createResidentRow(r, days, editMode);
+                tbody.appendChild(row);
+            });
+            currentOffset += residents.length;
+            hasMore = residents.length === currentLimit;
+            if (hasMore) ensureLoadMoreButton();
+            else removeLoadMoreButton();
+        }
+    } catch (err) {
+        console.error("Ошибка загрузки:", err);
+        const tbody = document.getElementById("calendarBody");
+        if (tbody && reset) tbody.innerHTML = '<tr><td colspan="20" style="color:red;">Ошибка загрузки</td></tr>';
+    } finally {
+        isLoading = false;
+        showLoader(false);
     }
 }
 // ===== ДОБАВЛЕНИЕ НОВОГО РЕЗИДЕНТА =====
@@ -537,7 +599,7 @@ async function saveNewRow(row, month, year) {
             }
         }
         alert("Запись добавлена!");
-        loadCalendar();
+        loadCalendar(true);
     } catch (err) {
         alert("Ошибка: " + err.message);
     }
@@ -556,7 +618,7 @@ async function uploadExcel() {
         if (response.ok && result.message) {
             alert("✅ " + result.message);
             fileInput.value = "";
-            loadCalendar();
+            loadCalendar(true);
         } else if (result.error) {
             alert("❌ Ошибка: " + result.error);
         } else {
@@ -567,14 +629,33 @@ async function uploadExcel() {
         alert("Ошибка загрузки: " + err.message);
     }
 }
-// ===== НОВЫЙ РАЗДЕЛ: ОТЧЁТ ПО ПЕРЕРАБОТКАМ =====
+// ===== ОТЧЁТ ПО ПЕРЕРАБОТКАМ =====
+async function loadOvertimeFields() {
+    try {
+        const response = await apiFetch("/api/fields");
+        const data = await response.json();
+        const select = document.getElementById("overtimeFieldFilter");
+        if (!select) return;
+        const selectedValue = select.value;
+        select.innerHTML = '<option value="">Все</option>';
+        data.forEach(field => {
+            const option = document.createElement("option");
+            option.value = field.name;
+            option.textContent = field.name;
+            select.appendChild(option);
+        });
+        if (selectedValue) select.value = selectedValue;
+    } catch (err) {
+        console.error("Ошибка загрузки месторождений для overtime:", err);
+    }
+}
 function toggleMainView(showOvertime) {
     const defaultSections = document.getElementById("defaultSections");
     const overtimeContainer = document.getElementById("overtimeContainer");
     if (showOvertime) {
         defaultSections.style.display = "none";
         overtimeContainer.style.display = "block";
-        // Установить даты по умолчанию: текущий месяц
+        loadOvertimeFields();
         const now = new Date();
         const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
         const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0,10);
@@ -587,29 +668,6 @@ function toggleMainView(showOvertime) {
         overtimeContainer.style.display = "none";
     }
 }
-
-// Переключение между основной таблицей и отчётом по переработкам
-function toggleMainView(showOvertime) {
-    const defaultSections = document.getElementById("defaultSections");
-    const overtimeContainer = document.getElementById("overtimeContainer");
-    if (showOvertime) {
-        defaultSections.style.display = "none";
-        overtimeContainer.style.display = "block";
-        // Установить даты по умолчанию: текущий месяц
-        const now = new Date();
-        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
-        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0,10);
-        const startInput = document.getElementById("overtimeStartDate");
-        const endInput = document.getElementById("overtimeEndDate");
-        if (startInput && !startInput.value) startInput.value = firstDay;
-        if (endInput && !endInput.value) endInput.value = lastDay;
-    } else {
-        defaultSections.style.display = "block";
-        overtimeContainer.style.display = "none";
-    }
-}
-
-// Скачивание отчёта по переработкам
 function downloadOvertimeReport() {
     const startDate = document.getElementById("overtimeStartDate").value;
     const endDate = document.getElementById("overtimeEndDate").value;
@@ -618,20 +676,15 @@ function downloadOvertimeReport() {
         return;
     }
     const normDays = document.getElementById("normDays").value || 15;
-    // (опционально) можно добавить выбор месторождения, если нужно
-    // const fieldName = document.getElementById("overtimeFieldFilter")?.value || "";
+    const fieldName = document.getElementById("overtimeFieldFilter").value;
     let url = `/api/get_overtime_report?date_from=${startDate}&date_to=${endDate}&norm_days=${normDays}`;
-    // if (fieldName) url += `&field_name=${encodeURIComponent(fieldName)}`;
-    
-    // Открываем в новой вкладке – браузер скачает Excel-файл
+    if (fieldName) url += `&field_name=${encodeURIComponent(fieldName)}`;
     window.open(url, '_blank');
 }
-
 // ===== ОБРАБОТЧИКИ =====
 document.addEventListener("change", async (e) => {
     if (e.target.classList.contains("day-select")) await saveDay(e.target);
 });
-
 document.addEventListener("DOMContentLoaded", async function () {
     if (!getToken()) { window.location.href = "/login"; return; }
     await loadFields();
@@ -644,14 +697,12 @@ document.addEventListener("DOMContentLoaded", async function () {
     const addBtn = document.getElementById("addResidentBtn");
     if (addBtn) addBtn.addEventListener("click", addNewRow);
     initDragFill();
-    await loadCalendar();
-
-    // Переключение между основной таблицей и отчётом по переработкам
+    await loadCalendar(true);
+    await loadOvertimeFields();
     const mainLink = document.getElementById("mainMenuLink");
     const overtimeLink = document.getElementById("overtimeReportLink");
     const generateBtn = document.getElementById("generateOvertimeBtn");
     const backBtn = document.getElementById("backToMainBtn");
-
     if (mainLink) mainLink.addEventListener("click", () => toggleMainView(false));
     if (overtimeLink) overtimeLink.addEventListener("click", () => toggleMainView(true));
     if (generateBtn) generateBtn.addEventListener("click", downloadOvertimeReport);

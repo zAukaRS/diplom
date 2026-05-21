@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_
 from sqlalchemy.orm import selectinload
-from datetime import datetime
+from datetime import datetime, date,timedelta
 from typing import Optional
 from app.database import get_db
 from app.models import Resident, Field, Customer, Location, Path, Room, ResidentDay
@@ -11,20 +11,44 @@ from app.core.dependencies import get_current_user
 
 router = APIRouter()
 
+def days_in_month(year: int, month: int) -> int:
+    if month == 12:
+        return 31
+    return (date(year, month + 1, 1) - timedelta(days=1)).day
+
 @router.get("/api/residents")
 async def get_residents(
     word: Optional[str] = None,
     by_field: Optional[str] = None,
+    month: Optional[int] = None,       
+    year: Optional[int] = None,
+    limit: int = 30,          
+    offset: int = 0,   
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user)
-):
+    user = Depends(get_current_user),
+):  
+    current_date_time = datetime.now()
+    if month is None:
+        month = current_date_time.month
+    if year is None:
+        year = current_date_time.year
+    
+    month_start = date(year, month, 1)
+    month_end = date(year, month, days_in_month(year, month))
+    
+    # Основной запрос: только жильцы, у которых есть пересечение с месяцем
     query = select(Resident).options(
         selectinload(Resident.field),
         selectinload(Resident.customer),
         selectinload(Resident.room).selectinload(Room.location),
         selectinload(Resident.room).selectinload(Room.path),
         selectinload(Resident.resident_days)
-    )
+    ).join(Resident.resident_days).where(
+        and_(
+            ResidentDay.date <= month_end,
+            ResidentDay.extra >= month_start
+        )
+    ).distinct()
 
     if by_field and by_field.strip():
         try:
@@ -45,6 +69,7 @@ async def get_residents(
             )
         )
 
+    query = query.limit(limit).offset(offset)   # добавить пагинацию
     result = await db.execute(query)
     residents = result.scalars().unique().all()
     if not residents:
@@ -54,7 +79,17 @@ async def get_residents(
     for r in residents:
         room = r.room
         location = room.location if room else None
-        days_info = {rd.date.day: rd.customer_id for rd in r.resident_days}
+        
+        days_info = {}
+        for rd in r.resident_days:
+            start = max(rd.date, month_start)
+            end = min(rd.extra, month_end)
+            if start <= end:
+                delta = (end - start).days + 1
+                for d in range(delta):
+                    day_num = (start + timedelta(days=d)).day
+                    days_info[day_num] = rd.customer_id
+        
         response.append({
             "id": r.id,
             "full_name": r.full_name,
@@ -64,12 +99,13 @@ async def get_residents(
             "room_number": room.room_number if room else "",
             "room_location": location.name if location else "",
             "room_path": room.path.description if room and room.path else "",
-            "room_capacity": "",
+            "room_capacity": room.capacity,
             "field": r.field.name if r.field else "",
             "customer": r.customer.name if r.customer else "",
             "days_info": days_info
         })
-    return response[:10]
+    
+    return response  # убираем ограничение [:40]
 
 @router.post("/api/add_resident")
 async def add_resident(data: dict = Body(...), db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):

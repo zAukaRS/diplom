@@ -104,7 +104,7 @@ async def upload_excel(
         room_cache = {k: (v.id if hasattr(v, 'id') else v) for k, v in room_cache.items()}
         await db.commit()
 
-        pending = 0
+        
         for rec in all_records:
             try:
                 async with db.begin_nested():
@@ -117,32 +117,67 @@ async def upload_excel(
                     check_in : date = rec['days'][0][0] 
                     check_out : date = rec['days'][-1][1]
                     
-                    resident = Resident(
-                        field_id=field_id,
-                        customer_id=customer_id,
-                        full_name=rec["full_name"],
-                        position=rec.get("position", ""),
-                        check_in=check_in or None,
-                        check_out=check_out or None,
-                        gender=gender,
-                        room_id=room_id,
-                        shift=rec.get("смена", ""),
+                    existing_resident = await db.execute(
+                        select(Resident).where(
+                            Resident.full_name == rec["full_name"],
+                            Resident.field_id == field_id,
+                            Resident.room_id == room_id,
+                            Resident.check_in == check_in,
+                            Resident.check_out == check_out,
+                            Resident.position == rec.get("position", "")
+                            # если нужно строго по полу, смене, должности – добавьте, но обычно достаточно ФИО+комната+период
+                        )
                     )
-                    db.add(resident)
-                    await db.flush()
-                    
-                    for x in rec['days']:
-                        check_in : date = x[0]
-                        check_out : date = x[1]
-                        db.add(ResidentDay(
-                            resident_id=resident.id,
-                            date=check_in,
-                            extra=check_out,
+                    resident = existing_resident.scalars().first()
+
+                    if not resident:
+                        # Создаём нового жильца
+                        resident = Resident(
+                            field_id=field_id,
                             customer_id=customer_id,
+                            full_name=rec["full_name"],
+                            position=rec.get("position", ""),
+                            check_in=check_in or None,
+                            check_out=check_out or None,
+                            gender=gender,
                             room_id=room_id,
-                            workplace_id=workplace_id,
-                            days=int((check_out-check_in).days + 1)
-                        ))
+                            shift=rec.get("смена", ""),
+                        )
+                        db.add(resident)
+                        await db.flush()
+                    else:
+                        # Обновляем только заказчика (customer) – если вы хотите именно это
+                        # Можно также обновить и другие поля, но по вашему запросу – только customer
+                        if resident.customer_id != customer_id:
+                            resident.customer_id = customer_id
+                            
+
+                    # Аналогично для ResidentDay – проверяем, не существует ли уже такой день
+                    for x in rec['days']:
+                        check_in_day, check_out_day = x[0], x[1]
+                        existing_day = await db.execute(
+                            select(ResidentDay).where(
+                                ResidentDay.resident_id == resident.id,
+                                ResidentDay.date == check_in_day,
+                                ResidentDay.extra == check_out_day,
+                                ResidentDay.customer_id == customer_id,
+                                ResidentDay.room_id == room_id,
+                            )
+                        )
+                        if not existing_day.scalars().first():
+                            db.add(ResidentDay(
+                                resident_id=resident.id,
+                                date=check_in_day,
+                                extra=check_out_day,
+                                customer_id=customer_id,
+                                room_id=room_id,
+                                workplace_id=workplace_id,
+                                days=int((check_out_day - check_in_day).days + 1)
+                            ))
+                        else:
+                            if existing_day.customer_id != customer_id:
+                                existing_day.customer_id = customer_id
+                            
                     
                     total += 1
                     
