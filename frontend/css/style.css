@@ -9,6 +9,9 @@ body {
     font-style: italic;
     color: #2563eb;
 }
+.row-repair {
+    background-color: #fff3cd !important; /* бледно-жёлтый */
+}
 .container {
     display: flex;
 }

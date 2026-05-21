@@ -214,6 +214,13 @@ async def update_resident(data: dict = Body(...), db: AsyncSession = Depends(get
             resident.gender = data["gender"]
         if "shift" in data:
             resident.shift = data["shift"]
+        if "status" in data:
+            if resident.room_id:
+                # Получаем комнату жильца
+                room = await db.execute(select(Room).where(Room.id == resident.room_id))
+                room = room.scalars().first()
+                if room:
+                    room.status = data["status"]
 
         await db.commit()
         await db.refresh(resident)

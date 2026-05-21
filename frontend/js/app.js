@@ -154,18 +154,31 @@ function toggleEditMode() {
 // Создание строки жильца
 function createResidentRow(r, days, editModeFlag) {
     const row = document.createElement("tr");
+    // Жёлтый фон, если статус ремонта
+    if (r.status == 1) row.classList.add("row-repair");
+
+    // ---------- Первая колонка: Расположение / селект статуса ----------
     const tdLocation = document.createElement("td");
-    tdLocation.textContent = r.room_location || "";
+    if (editModeFlag) {
+        tdLocation.appendChild(makeStatusSelect(r.status, r.id));
+    } else {
+        tdLocation.textContent = r.room_location || "";
+    }
     row.appendChild(tdLocation);
+
+    // Остальные колонки (копируем из вашей существующей функции)
     const tdPath = document.createElement("td");
     tdPath.textContent = r.room_path || "";
     row.appendChild(tdPath);
+
     const tdRoomNumber = document.createElement("td");
     tdRoomNumber.textContent = r.room_number || "";
     row.appendChild(tdRoomNumber);
+
     const tdCapacity = document.createElement("td");
     tdCapacity.textContent = r.room_capacity || "";
     row.appendChild(tdCapacity);
+
     const tdGender = document.createElement("td");
     if (editModeFlag) {
         tdGender.appendChild(makeEditSelect(GENDER_OPTIONS, r.gender, r.id, "gender"));
@@ -173,9 +186,11 @@ function createResidentRow(r, days, editModeFlag) {
         tdGender.textContent = r.gender || "";
     }
     row.appendChild(tdGender);
+
     const tdName = document.createElement("td");
     tdName.textContent = r.full_name || "";
     row.appendChild(tdName);
+
     const tdPosition = document.createElement("td");
     if (editModeFlag) {
         tdPosition.appendChild(makeEditSelect(POSITION_OPTIONS, r.position, r.id, "position"));
@@ -183,6 +198,7 @@ function createResidentRow(r, days, editModeFlag) {
         tdPosition.textContent = r.position || "";
     }
     row.appendChild(tdPosition);
+
     const tdShift = document.createElement("td");
     if (editModeFlag) {
         tdShift.appendChild(makeEditSelect(SHIFT_OPTIONS, r.shift, r.id, "shift"));
@@ -190,6 +206,8 @@ function createResidentRow(r, days, editModeFlag) {
         tdShift.textContent = r.shift || "";
     }
     row.appendChild(tdShift);
+
+    // Дни месяца
     for (let i = 1; i <= days; i++) {
         const selectedId = r.days_info?.[i] || "";
         const td = document.createElement("td");
@@ -203,12 +221,17 @@ function createResidentRow(r, days, editModeFlag) {
         td.appendChild(select);
         row.appendChild(td);
     }
+
+    // Колонка "Заказчик" (workplace)
     const tdCustomer = document.createElement("td");
     tdCustomer.textContent = r.workplace || "";
     row.appendChild(tdCustomer);
+
+    // Колонка "Месторождение"
     const tdField = document.createElement("td");
     tdField.textContent = r.field || "";
     row.appendChild(tdField);
+
     return row;
 }
 function makeEditSelect(options, currentValue, residentId, field) {
@@ -226,12 +249,52 @@ function makeEditSelect(options, currentValue, residentId, field) {
             const response = await apiFetch("/api/update_resident", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id: residentId, [field]: select.value })
+                body: JSON.stringify({ id: residentId, [field]: select.value, status: newRoomId  })
             });
             const result = await response.json();
             if (result.status !== "ok") alert("Ошибка сохранения");
         } catch (err) {
             console.error("Ошибка:", err);
+        }
+    });
+    return select;
+}
+function makeStatusSelect(currentStatus, residentId) {
+    const select = document.createElement("select");
+    select.className = "edit-select status-select";
+    const options = [
+        { value: 0, text: "✓ Норма" },
+        { value: 1, text: "🔧 Ремонт" }
+    ];
+    options.forEach(opt => {
+        const option = document.createElement("option");
+        option.value = opt.value;
+        option.textContent = opt.text;
+        if (currentStatus == opt.value) option.selected = true;
+        select.appendChild(option);
+    });
+    select.addEventListener("change", async () => {
+        try {
+            const response = await apiFetch("/api/update_resident", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: residentId, status: parseInt(select.value) })
+            });
+            const result = await response.json();
+            if (result.status !== "ok") alert("Ошибка обновления статуса");
+            else {
+                // Обновить визуально строку: изменить цвет и обновить r.status в future (но проще перезагрузить таблицу)
+                // или изменить класс строки прямо сейчас
+                const row = select.closest("tr");
+                if (parseInt(select.value) === 1) {
+                    row.classList.add("row-repair");
+                } else {
+                    row.classList.remove("row-repair");
+                }
+            }
+        } catch (err) {
+            console.error("Ошибка:", err);
+            alert("Ошибка сохранения статуса");
         }
     });
     return select;
