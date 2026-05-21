@@ -42,7 +42,7 @@ async def get_residents(
         selectinload(Resident.customer),
         selectinload(Resident.room).selectinload(Room.location),
         selectinload(Resident.room).selectinload(Room.path),
-        selectinload(Resident.resident_days)
+        selectinload(Resident.resident_days).selectinload(ResidentDay.workplace)
     ).join(Resident.resident_days).where(
         and_(
             ResidentDay.date <= month_end,
@@ -59,7 +59,11 @@ async def get_residents(
 
     if word:
         word_lower = word.lower().strip()
-        query = query.outerjoin(Room).outerjoin(Location).outerjoin(Customer).where(
+        # Явно присоединяем нужные таблицы с условиями
+        query = query.outerjoin(Room, Resident.room_id == Room.id)
+        query = query.outerjoin(Location, Room.location_id == Location.id)
+        query = query.outerjoin(Customer, Resident.customer_id == Customer.id)  # через Resident, не через ResidentDay
+        query = query.where(
             or_(
                 Resident.full_name.ilike(f"%{word_lower}%"),
                 Resident.position.ilike(f"%{word_lower}%"),
@@ -79,13 +83,16 @@ async def get_residents(
     for r in residents:
         room = r.room
         location = room.location if room else None
-        
+        workplace_name = None
         days_info = {}
+        
         for rd in r.resident_days:
             start = max(rd.date, month_start)
             end = min(rd.extra, month_end)
             if start <= end:
                 delta = (end - start).days + 1
+                if rd.workplace:
+                    workplace_name = rd.workplace.name
                 for d in range(delta):
                     day_num = (start + timedelta(days=d)).day
                     days_info[day_num] = rd.customer_id
@@ -102,7 +109,9 @@ async def get_residents(
             "room_capacity": room.capacity,
             "field": r.field.name if r.field else "",
             "customer": r.customer.name if r.customer else "",
-            "days_info": days_info
+            "days_info": days_info,
+            "workplace" : workplace_name,
+            "status" : room.status if room.status else 0
         })
     
     return response  # убираем ограничение [:40]

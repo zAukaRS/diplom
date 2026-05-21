@@ -38,14 +38,14 @@ async def get_report(
     for r in residents:
         actual_in = r.check_in if r.check_in >= date_in else date_in
         actual_out = r.check_out if r.check_out and r.check_out <= date_out else date_out
-        
+        days = (actual_out - actual_in).days + 1 
         data.append({
             'Месторождение': r.field.name,
             'Заказчик': r.customer.name,
             'ФИО проживающего': r.full_name,
             'Дата заезда': actual_in,
             'Дата выезда': actual_out,
-            'Количество дней': r.resident_days[0].days
+            'Количество дней': days
         })
     file_path = create_report(data, f"report_{date_in}_{date_out}.xlsx")
     return FileResponse(file_path, filename=os.path.basename(file_path))

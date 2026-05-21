@@ -204,7 +204,7 @@ function createResidentRow(r, days, editModeFlag) {
         row.appendChild(td);
     }
     const tdCustomer = document.createElement("td");
-    tdCustomer.textContent = r.customer || "";
+    tdCustomer.textContent = r.workplace || "";
     row.appendChild(tdCustomer);
     const tdField = document.createElement("td");
     tdField.textContent = r.field || "";

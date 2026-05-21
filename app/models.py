@@ -97,7 +97,8 @@ class Room(Base):
     capacity = Column(Integer, nullable=False)
     location_id = Column(Integer, ForeignKey("locations.id"))
     path_id = Column(Integer, ForeignKey("paths.id"))
-    room_unique_id = Column(String)
+    room_unique_id = Column(String),
+    status = Column(Integer)
 
 
 
