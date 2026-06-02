@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Модерация заявок</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="container">
+    <aside class="sidebar">
+        <h2>Админ-панель</h2>
+        <ul>
+            <li><a href="/home">Главная</a></li>
+            <li><a href="/moderate_requests">Заявки</a></li>
+            <li><a href="/admin_management">Управление админами</a></li>
+            <li><a href="/logout">Выход</a></li>
+        </ul>
+    </aside>
+    <div class="main-content">
+        <h1>Заявки на месторождение: <span id="fieldName"></span></h1>
+        <table id="requestsTable">
+            <thead><tr><th>Пользователь</th><th>Даты</th><th>Комментарий</th><th>Статус</th><th>Действие</th></tr></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+<script src="js/app.js"></script>
+<script src="js/moderate_requests.js"></script>
+</body>
+</html>

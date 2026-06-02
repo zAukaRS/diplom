@@ -1,7 +1,8 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Date, Boolean
+from sqlalchemy import Column, Integer, String, ForeignKey, Date, Boolean,DateTime
+import datetime
 from sqlalchemy.orm import relationship
 from app.database import Base
-
+from datetime import datetime, timezone
 
 class Role(Base):
     __tablename__ = "roles"
@@ -11,6 +12,84 @@ class Role(Base):
 
     users = relationship("User", back_populates="role")
 
+
+class Refresh_Token(Base):
+    __tablename__ = "refresh_tokens"
+    
+    id = Column(Integer, primary_key=True, index=True) 
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    token_hash = Column(String, unique=True, index=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False) 
+    revoked = Column(Boolean, default=False, nullable=False)
+
+    user = relationship("User", back_populates="refresh_tokens")
+
+
+class Request_before(Base):
+    __tablename__ = "request_before"
+
+    id = Column(Integer, primary_key=True, index=True) 
+
+    customer = Column(String, nullable=False)
+
+    contract_num = Column(String, nullable=False)
+    contract_date = Column(Date, nullable=True)
+
+    eol_fio = Column(String, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    position = Column(String)
+
+    field_id = Column(Integer, ForeignKey("fields.id"), nullable=False)
+
+    check_in = Column(Date, nullable=False)
+    check_out = Column(Date, nullable=False)
+    days = Column(Integer)
+
+    room = Column(String, nullable=True)
+    comment = Column(String, nullable=True)
+    status = Column(String, default="pending")  # pending, approved, rejected
+    admin_comment = Column(String, nullable=True)
+    created_at = Column(Date, default=datetime.now(timezone.utc))  
+
+
+    user = relationship("User", foreign_keys=[user_id])
+    field = relationship("Field")
+    
+
+class Request(Base):
+    __tablename__ = "requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+
+    contract_num = Column(String, nullable=False)
+    contract_date = Column(Date, nullable=True)
+    
+    eol_fio = Column(String, nullable=False)
+
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    position = Column(String)
+
+    field_id = Column(Integer, ForeignKey("fields.id"), nullable=False)
+
+
+    check_in = Column(Date, nullable=False)
+    check_out = Column(Date, nullable=False)
+    days = Column(Integer)
+
+# for manager/admins
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
+    comment = Column(String, nullable=True)
+    status = Column(String, default="pending")  # pending, approved, rejected
+    admin_comment = Column(String, nullable=True)
+    created_at = Column(Date, default=datetime.now(timezone.utc))  
+
+    user = relationship("User", foreign_keys=[user_id])
+    customer = relationship("Customer")
+    field = relationship("Field")
+    room = relationship("Room", foreign_keys=[room_id])
 
 
 class User(Base):
@@ -24,7 +103,7 @@ class User(Base):
 
     role = relationship("Role", back_populates="users")
     field = relationship("Field")
-
+    refresh_tokens = relationship("Refresh_Token", back_populates="user")
 
 class Field(Base):
     __tablename__ = "fields"
@@ -97,7 +176,7 @@ class Room(Base):
     capacity = Column(Integer, nullable=False)
     location_id = Column(Integer, ForeignKey("locations.id"))
     path_id = Column(Integer, ForeignKey("paths.id"))
-    room_unique_id = Column(String),
+    room_unique_id = Column(String)
     status = Column(Integer)
 
 

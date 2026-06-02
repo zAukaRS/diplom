@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Подать заявку на проживание</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="container">
+    <aside class="sidebar">
+        <h2>Меню</h2>
+        <ul>
+            <li><a href="/home">Главная</a></li>
+            <li><a href="/request_form">Новая заявка</a></li>
+            <li><a href="/my_requests">Мои заявки</a></li>
+            <li><a href="/logout">Выход</a></li>
+        </ul>
+    </aside>
+    <div class="main-content">
+        <h1>Подать заявку на проживание</h1>
+        <form id="requestForm">
+            <label>Месторождение:</label>
+            <select id="fieldId" required></select><br>
+            <label>Дата заезда:</label>
+            <input type="date" id="checkIn" required><br>
+            <label>Дата выезда:</label>
+            <input type="date" id="checkOut" required><br>
+            <label>Комментарий:</label>
+            <textarea id="comment" rows="4"></textarea><br>
+            <button type="submit">Отправить заявку</button>
+        </form>
+        <div id="message"></div>
+    </div>
+</div>
+<script src="js/app.js"></script>
+<script src="js/request_form.js"></script>
+</body>
+</html>

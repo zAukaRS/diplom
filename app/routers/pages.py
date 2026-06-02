@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path as PathLib
@@ -29,5 +29,18 @@ def root():
     return RedirectResponse(url="/login")
 
 @router.get("/admin_management", response_class=HTMLResponse)
-def admin_page(request: Request, user: User = Depends(admin_only)):
+def admin_page(request: Request):
     return templates.TemplateResponse("admin_management.html", {"request": request})
+
+
+@router.get("/request_form", response_class=HTMLResponse)
+def request_form(request: Request):
+    return templates.TemplateResponse("request_form.html", {"request": request})
+
+@router.get("/my_requests", response_class=HTMLResponse)
+def my_requests(request: Request):
+    return templates.TemplateResponse("my_requests.html", {"request": request})
+
+@router.get("/moderate_requests", response_class=HTMLResponse)
+def moderate_requests(request: Request):
+    return templates.TemplateResponse("moderate_requests.html", {"request": request})

@@ -21,6 +21,7 @@ app.include_router(fields.router)
 app.include_router(customers.router)
 app.include_router(admins.router)
 app.include_router(current_user.router)
+# app.include_router(requests_router.router)
 
 BASE_DIR = PathLib(__file__).parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"

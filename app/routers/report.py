@@ -1,14 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_,func,case, nulls_last,desc
+from sqlalchemy import select, and_,func,case,desc
 from sqlalchemy.orm import selectinload
 from datetime import date
 import os
 from typing import Optional
 from app.database import get_db
 from app.models import Resident, Field, Customer,ResidentDay
-# from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user
 from app.helpers.create_report import create_report,over_time
 router = APIRouter()
 
@@ -17,7 +17,7 @@ async def get_report(
     date_in: date,
     date_out: date,
     db: AsyncSession = Depends(get_db),
-    # user=Depends(get_current_user)
+    user=Depends(get_current_user)
 ):
     res = await db.execute(
         select(Resident)

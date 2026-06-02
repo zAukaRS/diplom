@@ -50,7 +50,7 @@ async def create_admin(
     new_admin = User(
         username=username,
         password=hashed_password,
-        role_id=admin_role_id,
+        role_id=1,
         field_id=field_id if field_id else None,
     )
     db.add(new_admin)
@@ -99,3 +99,28 @@ async def delete_admin(
     except Exception as e:
         await db.rollback()
         return JSONResponse(content={"status": "error", "detail": str(e)}, status_code=500)
+    
+
+  
+from app.models import Field
+
+@router.post("/api/fields/create")
+async def create_field(
+    data: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(admin_only)  
+):
+    field_name = data.get("name")
+    if not field_name:
+        raise HTTPException(status_code=400, detail="Название обязательно")
+    
+    # Проверка, существует ли уже
+    existing = await db.execute(select(Field).where(Field.name == field_name))
+    if existing.scalars().first():
+        return {"id": existing.scalars().first().id, "name": field_name}
+    
+    new_field = Field(name=field_name)
+    db.add(new_field)
+    await db.commit()
+    await db.refresh(new_field)
+    return {"id": new_field.id, "name": new_field.name}

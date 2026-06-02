@@ -17,4 +17,4 @@ async def get_admin_role_id(db : AsyncSession):
         await db.refresh(new_role)
         return new_role.id
     finally:
-        db.close()
+        await db.close()

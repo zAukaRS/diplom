@@ -125,7 +125,7 @@ function generateCalendar(days) {
     for (let i = 1; i <= days; i++) row += `<th>${i}</th>`;
     row += "<th>Заказчик</th>";
     row += "<th>Месторождение</th>";
-    row += "</table>";
+    row += "</tr>";
     head.innerHTML = row;
 }
 function searchResidents() { loadCalendar(true); }
@@ -149,15 +149,13 @@ function toggleEditMode() {
         btn.style.background = editMode ? "#4CAF50" : "";
         btn.style.color = editMode ? "white" : "";
     }
-    loadCalendar(true); // перезагрузить таблицу с новым режимом
+    loadCalendar(true);
 }
 // Создание строки жильца
 function createResidentRow(r, days, editModeFlag) {
     const row = document.createElement("tr");
-    // Жёлтый фон, если статус ремонта
     if (r.status == 1) row.classList.add("row-repair");
 
-    // ---------- Первая колонка: Расположение / селект статуса ----------
     const tdLocation = document.createElement("td");
     if (editModeFlag) {
         tdLocation.appendChild(makeStatusSelect(r.status, r.id));
@@ -166,7 +164,6 @@ function createResidentRow(r, days, editModeFlag) {
     }
     row.appendChild(tdLocation);
 
-    // Остальные колонки (копируем из вашей существующей функции)
     const tdPath = document.createElement("td");
     tdPath.textContent = r.room_path || "";
     row.appendChild(tdPath);
@@ -207,7 +204,6 @@ function createResidentRow(r, days, editModeFlag) {
     }
     row.appendChild(tdShift);
 
-    // Дни месяца
     for (let i = 1; i <= days; i++) {
         const selectedId = r.days_info?.[i] || "";
         const td = document.createElement("td");
@@ -222,12 +218,10 @@ function createResidentRow(r, days, editModeFlag) {
         row.appendChild(td);
     }
 
-    // Колонка "Заказчик" (workplace)
     const tdCustomer = document.createElement("td");
     tdCustomer.textContent = r.workplace || "";
     row.appendChild(tdCustomer);
 
-    // Колонка "Месторождение"
     const tdField = document.createElement("td");
     tdField.textContent = r.field || "";
     row.appendChild(tdField);
@@ -249,7 +243,7 @@ function makeEditSelect(options, currentValue, residentId, field) {
             const response = await apiFetch("/api/update_resident", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id: residentId, [field]: select.value, status: newRoomId  })
+                body: JSON.stringify({ id: residentId, [field]: select.value })
             });
             const result = await response.json();
             if (result.status !== "ok") alert("Ошибка сохранения");
@@ -283,8 +277,6 @@ function makeStatusSelect(currentStatus, residentId) {
             const result = await response.json();
             if (result.status !== "ok") alert("Ошибка обновления статуса");
             else {
-                // Обновить визуально строку: изменить цвет и обновить r.status в future (но проще перезагрузить таблицу)
-                // или изменить класс строки прямо сейчас
                 const row = select.closest("tr");
                 if (parseInt(select.value) === 1) {
                     row.classList.add("row-repair");
@@ -427,7 +419,6 @@ async function loadCalendar(reset = true) {
         fieldId !== currentFieldId ||
         word !== currentWord
     ) {
-        // параметры изменились – сбрасываем
         loadCalendar(true);
         isLoading = false;
         return;
@@ -770,4 +761,21 @@ document.addEventListener("DOMContentLoaded", async function () {
     if (overtimeLink) overtimeLink.addEventListener("click", () => toggleMainView(true));
     if (generateBtn) generateBtn.addEventListener("click", downloadOvertimeReport);
     if (backBtn) backBtn.addEventListener("click", () => toggleMainView(false));
+
+    // ===== ПЕРЕКЛЮЧАТЕЛЬ ТЕМЫ (безопасная инициализация) =====
+    const themeToggleBtn = document.getElementById("themeToggleBtn");
+    if (themeToggleBtn) {
+        if (localStorage.getItem("theme") === "dark") {
+            document.body.classList.add("dark-theme");
+            themeToggleBtn.textContent = "Светлая тема";
+        } else {
+            themeToggleBtn.textContent = "Тёмная тема";
+        }
+        themeToggleBtn.addEventListener("click", () => {
+            document.body.classList.toggle("dark-theme");
+            const isDark = document.body.classList.contains("dark-theme");
+            localStorage.setItem("theme", isDark ? "dark" : "light");
+            themeToggleBtn.textContent = isDark ? "Светлая тема" : "Тёмная тема";
+        });
+    }
 });

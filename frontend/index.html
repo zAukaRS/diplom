@@ -6,7 +6,6 @@
     <link rel="stylesheet" href="css/style.css">
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <style>
-        /* Стиль для индикатора загрузки (если нет в style.css) */
         .loader {
             text-align: center;
             padding: 20px;
@@ -33,30 +32,27 @@
 
 <div class="container">
 
-    <!-- Боковое меню -->
     <aside class="sidebar">
         <h2>Админ-панель</h2>
         <ul>
-            <li id="mainMenuLink">Главная</li>
-            <li id="overtimeReportLink">Отчёт по переработкам</li>
-            <li>Отчёты</li>
-            <li>Комнаты</li>
-            <li>Общежития</li>
-            <li><a href="/admin_management">Управление админами</a></li>
-            <li><a href="/logout">Выход</a></li>
+            <li id="mainMenuLink">🏠 Главная</li>
+            <li id="overtimeReportLink">📊 Отчёт по переработкам</li>
+            <li>📄 Отчёты</li>
+            <li>🛏 Комнаты</li>
+            <li>🏢 Общежития</li>
+            <li><a href="/admin_management">👤 Управление админами</a></li>
+            <li id="themeToggleBtn" style="cursor: pointer;">🌓 Тёмная тема</li>
+            <li><a href="/logout">🚪 Выход</a></li>
         </ul>
     </aside>
 
-    <!-- Основной контент -->
     <div class="main-content">
 
-        <!-- Секции, видимые по умолчанию (Главная) -->
         <div id="defaultSections">
             <header>
                 <h1>Система управления общежитиями</h1>
             </header>
 
-            <!-- Карточки -->
             <section class="cards">
                 <div class="card">
                     <h2>72%</h2>
@@ -76,7 +72,6 @@
                 </div>
             </section>
 
-            <!-- Форма обычного отчёта -->
             <section class="report-section">
                 <h2>Сформировать отчёт</h2>
                 <div class="report-form">
@@ -88,7 +83,6 @@
                 </div>
             </section>
 
-            <!-- Таблица с проживающими -->
             <section class="table-section">
                 <div class="filters compact">
                     <input type="text" id="searchWord" placeholder="Поиск по ФИО, должности..." class="filter-select">
@@ -134,7 +128,6 @@
             </section>
         </div>
 
-        <!-- Блок для отчёта по переработкам (изначально скрыт) -->
         <div id="overtimeContainer" style="display: none;">
             <section class="report-section">
                 <h2>📊 Отчёт по переработкам</h2>
@@ -155,8 +148,8 @@
             </section>
         </div>
 
-    </div> <!-- .main-content -->
-</div> <!-- .container -->
+    </div>
+</div>
 
 <script src="js/app.js"></script>
 </body>
