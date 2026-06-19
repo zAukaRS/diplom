@@ -2,8 +2,18 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Подать заявку на проживание</title>
+    <title>Новая заявка на проживание</title>
     <link rel="stylesheet" href="css/style.css">
+    <style>
+        .form-group { margin-bottom: 15px; }
+        label { display: inline-block; width: 200px; font-weight: bold; }
+        input, select, textarea { width: 300px; padding: 5px; }
+        button { margin-top: 10px; padding: 8px 20px; }
+        .room-list { margin-top: 10px; }
+        .room-item { margin: 5px; padding: 5px; border: 1px solid #ccc; display: inline-block; cursor: pointer; }
+        .room-item.selected { background-color: #4CAF50; color: white; }
+        #availableRooms { margin-top: 10px; }
+    </style>
 </head>
 <body>
 <div class="container">
@@ -19,14 +29,44 @@
     <div class="main-content">
         <h1>Подать заявку на проживание</h1>
         <form id="requestForm">
-            <label>Месторождение:</label>
-            <select id="fieldId" required></select><br>
-            <label>Дата заезда:</label>
-            <input type="date" id="checkIn" required><br>
-            <label>Дата выезда:</label>
-            <input type="date" id="checkOut" required><br>
-            <label>Комментарий:</label>
-            <textarea id="comment" rows="4"></textarea><br>
+            <div class="form-group">
+                <label>Месторождение:</label>
+                <select id="fieldId" required></select>
+            </div>
+            <div class="form-group">
+                <label>Дата заезда:</label>
+                <input type="date" id="checkIn" required>
+            </div>
+            <div class="form-group">
+                <label>Дата выезда:</label>
+                <input type="date" id="checkOut" required>
+            </div>
+            <div class="form-group">
+                <label>Свободные комнаты:</label>
+                <div id="availableRooms"></div>
+                <input type="hidden" id="roomId" required>
+            </div>
+            <div class="form-group">
+                <label>Заказчик (организация):</label>
+                <input type="text" id="customer" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Дата договора:</label>
+                <input type="date" id="contractDate" required>
+            </div>
+            <div class="form-group">
+                <label>ЕОЛ (ФИО ответственного):</label>
+                <input type="text" id="eolFio" required>
+            </div>
+            <div class="form-group">
+                <label>Должность:</label>
+                <input type="text" id="position">
+            </div>
+            <div class="form-group">
+                <label>Комментарий:</label>
+                <textarea id="comment" rows="3"></textarea>
+            </div>
             <button type="submit">Отправить заявку</button>
         </form>
         <div id="message"></div>

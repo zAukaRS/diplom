@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <title>Административная система общежитий</title>
     <link rel="stylesheet" href="css/style.css">
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <style>
         .loader {
             text-align: center;
@@ -26,6 +25,12 @@
         #loadMoreBtn:hover {
             background-color: #1e40af;
         }
+        .news-block {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
     </style>
 </head>
 <body>
@@ -35,14 +40,17 @@
     <aside class="sidebar">
         <h2>Админ-панель</h2>
         <ul>
-            <li id="mainMenuLink">🏠 Главная</li>
+            <li id="mainMenuLink"><a href="/home">🏠 Главная</a></li>
+            <li><a href="/request_form">📝 Новая заявка</a></li>
+            <li><a href="/my_requests">📋 Мои заявки</a></li>
             <li id="overtimeReportLink">📊 Отчёт по переработкам</li>
             <li>📄 Отчёты</li>
             <li>🛏 Комнаты</li>
             <li>🏢 Общежития</li>
             <li><a href="/admin_management">👤 Управление админами</a></li>
+            <li><a href="/moderate_requests">📋 Модерация заявок</a></li>
             <li id="themeToggleBtn" style="cursor: pointer;">🌓 Тёмная тема</li>
-            <li><a href="/logout">🚪 Выход</a></li>
+            <li><a href="#" onclick="logout(); return false;">🚪 Выход</a></li>
         </ul>
     </aside>
 
@@ -53,36 +61,25 @@
                 <h1>Система управления общежитиями</h1>
             </header>
 
-            <section class="cards">
-                <div class="card">
-                    <h2>72%</h2>
-                    <p>Средняя загрузка</p>
-                </div>
-                <div class="card">
-                    <h2>87</h2>
-                    <p>Текущих проживающих</p>
-                </div>
-                <div class="card">
-                    <h2>33</h2>
-                    <p>Свободных мест</p>
-                </div>
-                <div class="card">
-                    <h2>12</h2>
-                    <p>Выселений за месяц</p>
-                </div>
-            </section>
+            <!-- Блок новостей (виден всем) -->
+            <div class="news-block" id="newsBlock">
+                <h2>Новости системы</h2>
+                <p>Добро пожаловать в систему управления проживанием. Здесь будут отображаться важные события и объявления.</p>
+            </div>
 
+            <!-- Форма отчёта (скрывается для обычных пользователей) -->
             <section class="report-section">
-                <h2>Сформировать отчёт</h2>
                 <div class="report-form">
                     <label>С:</label>
                     <input type="date" id="dateFrom">
                     <label>По:</label>
                     <input type="date" id="dateTo">
+                    <label>Стоимость дня (₽):</label>
+                    <input type="number" id="costPerDay" value="500" step="100" style="width: 100px;">
                     <button onclick="downloadReport()">Сформировать</button>
                 </div>
             </section>
-
+            
             <section class="table-section">
                 <div class="filters compact">
                     <input type="text" id="searchWord" placeholder="Поиск по ФИО, должности..." class="filter-select">

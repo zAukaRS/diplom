@@ -11,13 +11,15 @@
     <aside class="sidebar">
         <h2>Админ-панель</h2>
         <ul>
-            <li><a href="/home">🏠 Главная</a></li>
-            <li>📊 Отчёты</li>
+            <li id="mainMenuLink"><a href="/home">🏠 Главная</a></li>
+            <li id="overtimeReportLink">📊 Отчёт по переработкам</li>
+            <li>📄 Отчёты</li>
             <li>🛏 Комнаты</li>
             <li>🏢 Общежития</li>
             <li><a href="/admin_management">👤 Управление админами</a></li>
+            <li><a href="/moderate_requests">📋 Модерация заявок</a></li>
             <li id="themeToggleBtn" style="cursor: pointer;">🌓 Тёмная тема</li>
-            <li><a href="/logout">🚪 Выход</a></li>
+            <li><a href="#" onclick="logout(); return false;">🚪 Выход</a></li>
         </ul>
     </aside>
     <div class="main-content">

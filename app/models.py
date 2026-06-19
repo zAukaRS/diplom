@@ -3,6 +3,7 @@ import datetime
 from sqlalchemy.orm import relationship
 from app.database import Base
 from datetime import datetime, timezone
+from sqlalchemy import func
 
 class Role(Base):
     __tablename__ = "roles"
@@ -39,6 +40,8 @@ class Request_before(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     position = Column(String)
+    gender = Column(String)
+    full_name = Column(String)
 
     field_id = Column(Integer, ForeignKey("fields.id"), nullable=False)
 
@@ -46,7 +49,7 @@ class Request_before(Base):
     check_out = Column(Date, nullable=False)
     days = Column(Integer)
 
-    room = Column(String, nullable=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
     comment = Column(String, nullable=True)
     status = Column(String, default="pending")  # pending, approved, rejected
     admin_comment = Column(String, nullable=True)
@@ -55,6 +58,7 @@ class Request_before(Base):
 
     user = relationship("User", foreign_keys=[user_id])
     field = relationship("Field")
+    room = relationship("Room", foreign_keys=[room_id])
     
 
 class Request(Base):
@@ -84,12 +88,20 @@ class Request(Base):
     comment = Column(String, nullable=True)
     status = Column(String, default="pending")  # pending, approved, rejected
     admin_comment = Column(String, nullable=True)
-    created_at = Column(Date, default=datetime.now(timezone.utc))  
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+
+    # Прямая ссылка на жильца (Resident), не зависящая от User.resident_id
+    resident_id = Column(Integer, ForeignKey("residents.id"), nullable=True)
 
     user = relationship("User", foreign_keys=[user_id])
     customer = relationship("Customer")
     field = relationship("Field")
     room = relationship("Room", foreign_keys=[room_id])
+    resident = relationship("Resident", foreign_keys=[resident_id])
+    customer = relationship("Customer", back_populates="requests")
 
 
 class User(Base):
@@ -100,10 +112,12 @@ class User(Base):
     password = Column(String, nullable=False)
     role_id = Column(Integer, ForeignKey("roles.id"))
     field_id = Column(Integer, ForeignKey("fields.id"),nullable=True)
+    resident_id =  Column(Integer, ForeignKey("residents.id"))
 
     role = relationship("Role", back_populates="users")
     field = relationship("Field")
     refresh_tokens = relationship("Refresh_Token", back_populates="user")
+    resident = relationship("Resident", uselist=False, foreign_keys=[resident_id])
 
 class Field(Base):
     __tablename__ = "fields"
@@ -111,7 +125,7 @@ class Field(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String)
 
-    residents = relationship("Resident", back_populates="field")
+
     rooms = relationship("Room", back_populates="field")
 
 
@@ -121,50 +135,26 @@ class Customer(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String)
 
-    residents = relationship("Resident", back_populates="customer")
-    resident_days = relationship("ResidentDay", back_populates="customer")  
+
+    requests = relationship("Request", back_populates="customer")
 
 class Resident(Base):
     __tablename__ = "residents"
 
     id = Column(Integer, primary_key=True)
-    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
-    room = relationship("Room",foreign_keys=[room_id])
-    field_id = Column(Integer, ForeignKey("fields.id"))
-    customer_id = Column(Integer, ForeignKey("customers.id"))
-
-    check_in = Column(Date)
-    check_out = Column(Date)
-
-    full_name = Column(String)
+    
     position = Column(String)
     gender = Column(String, nullable=True)
-    shift = Column(String, nullable=True) 
-    field = relationship("Field", back_populates="residents")
-    customer = relationship("Customer", back_populates="residents")
+    birthday = Column(Date, nullable=True)
     
-    resident_days = relationship(
-        "ResidentDay",
-        back_populates="resident",
-        cascade="all, delete-orphan"
-    )
+    full_name = Column(String, nullable=False)
 
+    first_name = Column(String)
+    last_name = Column(String)
+    middle_name = Column(String)
+    
 
-class ResidentDay(Base):
-    __tablename__ = "resident_days"
-
-    id = Column(Integer, primary_key=True, index=True)
-    resident_id = Column(Integer, ForeignKey("residents.id"))
-    room_id = Column(Integer, ForeignKey("rooms.id"),nullable=True)
-    date = Column(Date,nullable=True)
-    extra = Column(Date, nullable=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True) 
-    workplace_id =  Column(Integer, ForeignKey("workplaces.id"), nullable=True)
-    days = Column(Integer,nullable=True)
-    customer = relationship("Customer", back_populates="resident_days")
-    workplace = relationship("Workplace", back_populates="resident_days")
-    resident = relationship("Resident", back_populates="resident_days")
-    room = relationship("Room", back_populates="resident_days")
+    
 
 
 class Room(Base):
@@ -184,10 +174,7 @@ class Room(Base):
     field = relationship("Field", back_populates="rooms")
     location = relationship("Location", back_populates="rooms")
     path = relationship("Path", back_populates="rooms")
-    resident_days = relationship("ResidentDay", back_populates="room")
     
-    
-   
 
 
 class Location(Base):
@@ -205,8 +192,11 @@ class Path(Base):
 
     rooms = relationship("Room", back_populates="path")
 
-class Workplace(Base):
-    __tablename__ = "workplaces"
-    id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)
-    resident_days = relationship("ResidentDay", back_populates="workplace")
+
+
+class ContractCounter(Base):
+    __tablename__ = "contract_counters"
+
+    id = Column(Integer, primary_key=True, index=True)
+    prefix = Column(String, unique=True, nullable=False)   # например, "УРМ"
+    last_number = Column(Integer, default=0, nullable=False)

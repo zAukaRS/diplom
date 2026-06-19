@@ -143,7 +143,7 @@ async def refresh_token(
                                         )
                                 )
                             )
-   
+    
     if not res.scalars().first():
         response.delete_cookie("refresh_token")
         raise HTTPException(
@@ -161,16 +161,14 @@ async def refresh_token(
 
 @router.post("/logout")
 async def logout(
-        response: Response,
-        current_user: User = Depends(get_current_user),
-        db: AsyncSession = Depends(get_db)
-    ):
-
-    await db.execute(update(Refresh_Token)
-    .where(Refresh_Token.user_id == current_user.id)
-    .values(revoked = True)
-    )
-    await db.commit()
-
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db)
+):
+    refresh_token = request.cookies.get("refresh_token")
+    if refresh_token:
+        token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+        await db.execute(update(Refresh_Token).where(Refresh_Token.token_hash == token_hash).values(revoked=True))
+        await db.commit()
     response.delete_cookie("refresh_token")
     return {"message": "Logged out"}

@@ -1,337 +1,343 @@
-"""
-Парсер Excel-файла с расселением по общежитию.
-
-Структура листа (например, 'июнь'):
-  Колонки:
-    A  - Расположение     (ffill)
-    B  - Путь             (ffill)
-    C  - № комнаты        (ffill)
-    D  - К-во мест        (ffill)
-    E  - Пол
-    F  - ФИО              (может содержать 1-N имён через '/')
-    G  - Должность        (может содержать 1-N должностей через '/')
-    H  - Смена
-    I–AM (cols 9–39) - дни 1–31: значение = название заказчика, None = жильец отсутствует
-    AO - Место работы     (дополнительный столбец)
-
-Логика разделения жильцов:
-  • 1 имя  → 1 запись.
-  • N имён, блоков >= N по (значение+цвет) → i-е имя ↔ i-й блок (посменная работа).
-  • N имён, 1 блок, 1 цвет → все жили одновременно, каждый получает весь диапазон.
-
-Цвет ячейки:
-  Когда заказчик одинаковый, но жильцы разные — Excel-файл размечает ячейки
-  разными цветами заливки. Функция _contiguous_blocks учитывает смену цвета
-  как границу между жильцами, даже если значение не менялось.
-"""
-
 from __future__ import annotations
 
 import io
-from datetime import date, timedelta
-from typing import Generator
+import logging
+import re
+import unicodedata
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+from typing import Generator, Optional
 
 from openpyxl import load_workbook
-from openpyxl.cell import Cell
+from openpyxl.worksheet.worksheet import Worksheet
 
-# ---------------------------------------------------------------------------
-# Вспомогательные функции
-# ---------------------------------------------------------------------------
+logger = logging.getLogger("excel_parser")
 
-DAY_COL_START = 9   # 1-based, колонка I = день 1
-DAY_COL_END   = 39  # колонка AM = день 31 (включительно)
+CONTRACT_DATE_RE = re.compile(r"(\d{2})\.(\d{2})\.(\d{2,4})")
+
+# Excel (Windows) хранит даты как количество дней от 30.12.1899
+# (с учётом фиктивного 29.02.1900 — отсюда именно эта база, а не 31.12.1899).
+_EXCEL_EPOCH = date(1899, 12, 30)
 
 
-def _cell_color(cell: Cell) -> str | None:
-    try:
-        fill = cell.fill
-        if fill.fill_type == "solid":
-            color = fill.fgColor
-            if color.type == "rgb":
-                rgb = color.rgb
-                rgb_clean = rgb[-6:] if len(rgb) == 8 else rgb
-                if rgb_clean not in ("000000", "FFFFFF", "ffffff"):
-                    return rgb_clean
-            elif color.type == "theme":
-                # theme:0 с нулевым tint = дефолтный цвет, игнорируем
-                if color.theme == 0 and abs(color.tint) < 0.001:
+def _clean_str(value) -> str:
+    if value is None:
+        return ""
+    s = str(value).replace("\xa0", " ")
+    s = "".join(" " if unicodedata.category(c) == "Zs" else c for c in s)
+    s = re.sub(r"[\r\n\t]+", " ", s)
+    s = re.sub(r"\s+", " ", s)
+    return s.strip()
+
+
+def _to_date(value) -> Optional[date]:
+    if value in (None, ""):
+        return None
+
+    if isinstance(value, datetime):
+        return value.date()
+
+    if isinstance(value, date):
+        return value
+
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return _EXCEL_EPOCH + timedelta(days=int(value))
+
+    value = _clean_str(value)
+    if value in (None, ""):
+        return None
+    # ❗ защита от мусорных месяцев типа 05.13.2026
+    if isinstance(value, str):
+        if "." in value:
+            parts = value.split(".")
+            if len(parts) == 3:
+                try:
+                    _, m, _ = parts
+
+                    if not (1 <= int(m) <= 12):
+                        return None
+
+                except Exception:
                     return None
-                return f"theme:{color.theme}:{color.tint:.3f}"
-    except Exception:
-        pass
+    m = CONTRACT_DATE_RE.match(value)
+    if not m:
+        return None
+
+    d, mo, y = map(int, m.groups())
+    if y < 100:
+        y += 2000
+    
+    try:
+        return date(y, mo, d)
+    except ValueError:
+        return None
+
+
+
+def _split_contract(raw):
+    if not raw:
+        return None, None
+
+    raw = str(raw)
+
+    m = CONTRACT_DATE_RE.search(raw)
+    contract_date = None
+
+    if m:
+        d, mo, y = map(int, m.groups())
+        if y < 100:
+            y += 2000
+        contract_date = date(y, mo, d)
+
+    idx = raw.lower().find(" от ")
+    contract_num = raw[:idx] if idx != -1 else raw
+    return contract_num.strip(), contract_date
+
+
+
+@dataclass
+class ParsedRequestRow:
+    full_name: str
+    position: Optional[str]
+
+    field_name: str
+
+    check_in: date
+    check_out: date
+    days: Optional[int]
+
+    customer_name: Optional[str]
+    contract_num: Optional[str]
+    contract_date: Optional[date]
+
+    eol_fio: Optional[str]
+
+    is_full_form: bool
+
+    sheet_name: str
+    row_number: int
+
+
+def find_header_row(ws, max_scan_rows=20):
+    max_row = min(ws.max_row, max_scan_rows)
+
+    for row_idx in range(1, max_row):
+
+        a = str(ws.cell(row_idx, 1).value or "").lower()
+        d = str(ws.cell(row_idx, 4).value or "").lower()
+        f = str(ws.cell(row_idx, 6).value or "").lower()
+
+        g = ws.cell(row_idx + 1, 7).value
+        h = ws.cell(row_idx + 1, 8).value
+
+        score = 0
+
+        if "наименование" in a:
+            score += 1
+
+        if "фио" in d or "работник" in d:
+            score += 1
+
+        if "объект" in f or "месторождение" in f:
+            score += 1
+
+        if _to_date(g):
+            score += 1
+
+        if _to_date(h):
+            score += 1
+
+        if score >= 4:
+            logger.info("HEADER_FOUND: лист '%s': заголовок в строке %s (score=%s)", ws.title, row_idx, score)
+            return row_idx
+
+    logger.warning("HEADER_NOT_FOUND: лист '%s': шапка не найдена в первых %s строках", ws.title, max_scan_rows)
     return None
 
 
-def _contiguous_blocks(
-    day_cells: list[Cell],
-) -> list[tuple[int, int, str | None, str | None, int]]:
+def parse_sheet(ws: Worksheet) -> Generator[ParsedRequestRow, None, None]:
     """
-    Возвращает список (day_start, day_end, customer) непрерывных блоков.
-    day_start и day_end – номера дней (1-based), оба включительно.
+    Чтение листа.
 
-    Блок разрывается когда:
-      1. Значение ячейки становится None (жилец уехал)
-      2. Значение меняется (другой заказчик)
-      3. Цвет заливки меняется (тот же заказчик, но другой жилец)
+    После определения шапки все данные читаются
+    строго по индексам колонок:
+
+        A организация
+        B договор
+        C ЕОЛ
+        D ФИО
+        E должность
+        F месторождение
+        G заезд
+        H выезд
+        I дни
     """
-    blocks: list[tuple[int, int, str,str,int]] = []
-    in_block = False
-    start = 0
-    cur_val = None
-    cur_color = None
 
-    for i, cell in enumerate(day_cells):
-        v = cell.value
-        if isinstance(v, str):
-            v = v.strip() or None
-        color = _cell_color(cell)
+    header_row = find_header_row(ws)
 
-        if v is not None and not in_block:
-            # Начало нового блока
-            in_block = True
-            start = i
-            cur_val = v
-            cur_color = color
+    if header_row is None:
+        raise ValueError(
+            f"Лист '{ws.title}': не удалось определить строку заголовков "
+            f"(в первых 20 строках не найдена структура заявки)"
+        )
 
-        elif in_block:
-            val_changed   = (v is None or v != cur_val)
-            color_changed = (color != cur_color) and (color is not None or cur_color is not None)
+    header_found = True
 
-            if val_changed or color_changed:
-                blocks.append((start + 1, i, cur_val,cur_color,i-start))
-                if v is not None:
-                    start = i
-                    cur_val = v
-                    cur_color = color
-                else:
-                    in_block = False
+    if not header_found:
+        return
 
-    if in_block and cur_val is not None:
-        blocks.append((start + 1, len(day_cells), cur_val,cur_color,len(day_cells)-start))
+    parsed_count = 0
+    skipped_empty = 0
 
-    return blocks
-
-
-def _split_slash(value: str | None, n: int) -> list[str]:
-    """Разбивает строку через '/', возвращает ровно n элементов."""
-    if not value:
-        return [""] * n
-    parts = [p.strip() for p in str(value).split("/")]
-    if len(parts) >= n:
-        return parts[:n]
-    # Если частей меньше — дублируем последнюю
-    while len(parts) < n:
-        parts.append(parts[-1])
-    return parts
-
-def merge_1(blocks : list[tuple[int, int, str | None, str | None, int]],n : int) -> dict[int,list[tuple[int, int, str | None, str | None, int]]]:
-    i = 1 
-    bock_for_d = {0: [blocks[0]]} # если в i (где i это for i in merge блоки) есть несколько частей
-    if len(blocks) >= n:
-        color_st = blocks[0][-2]
-        for x in range(1, len(blocks)):
-            if blocks[x][-2] == color_st and color_st is not None:
-                bock_for_d[i-1].append(blocks[x])
-            else:
-                i += 1
-                bock_for_d[i-1] = [blocks[x]]
-            color_st = blocks[x][-2]
-    return bock_for_d
-
-def curr_cust_and_date(
-    blocks: list[tuple[int, int, str | None, str | None, int]],
-    n: int
-) -> dict[int, list[tuple[int, int, str | None, str | None, int]]] | None:
-    if len(blocks) >= n:
-        bock_for_d = merge_1(blocks,n)
-        if len(bock_for_d) == n:
-            return bock_for_d
-        else:
-            return None
-    else:
-        return None
-
-def parse_sheet(
-    wb_or_path,
-    sheet_name: str,
-    year: int,
-    month: int,
-) -> Generator[dict, None, None]:
-    """
-    Генератор: для каждого жильца на листе возвращает словарь:
-
-        {
-            "расположение": str,
-            "путь": str,
-            "комната": str,
-            "пол": str,
-            "смена": str,
-            "full_name": str,
-            "position": str,
-            "customer": str,      
-            "check_in": date,
-            "check_out": date,
-            "days": int,
-        }
-    """
-    if isinstance(wb_or_path, (str, bytes)):
-        wb = load_workbook(wb_or_path, data_only=False)
-    elif hasattr(wb_or_path, "read"):
-        content = wb_or_path.read()
-        wb = load_workbook(io.BytesIO(content), data_only=False)
-    else:
-        wb = wb_or_path
-
-    sheet = wb[sheet_name]
-
-    # Контекстные переменные (ffill)
-    ctx_location = ""
-    ctx_path = ""
-    ctx_room = ""
-    ctx_seats = ""
-    ctx_room_unique = "" 
-    list_of_rooms = []
-    
-    for _, row in enumerate(
-        sheet.iter_rows(min_row=2, max_row=sheet.max_row), start=2
+    for row in ws.iter_rows(
+        min_row=header_row + 1,
+        max_row=ws.max_row
     ):
-        # --- ffill контекстных колонок ---
-        def cv(col_0idx):
-            v = row[col_0idx].value
-            return str(v).strip() if v not in (None, "") else None
+
+        customer_name = row[0].value
+        contract_raw = row[1].value
+        eol_fio = row[2].value
+        full_name = row[3].value
+        position = row[4].value
+        field_name = row[5].value
+
+        check_in = _to_date(row[6].value)
+        check_out = _to_date(row[7].value)
+
+        days_raw = row[8].value
+
+        # полностью пустая строка
+        if all(
+            cell.value in (None, "")
+            for cell in row[:9]
+        ):
+            continue
+
+        # служебные строки пропускаем
+        if not full_name:
+            skipped_empty += 1
+            continue
+
+        if not field_name:
+            skipped_empty += 1
+            continue
+
+        if not check_in or not check_out:
+            logger.error(
+                "PARSE_ERROR invalid date: sheet=%s row=%s in=%r out=%r",
+                ws.title, row[0].row, row[6].value, row[7].value
+            )
+            continue
+
+        contract_num, contract_date = _split_contract(contract_raw)
+
+        try:
+            days = (
+                int(days_raw)
+                if days_raw not in (None, "")
+                else (check_out - check_in).days
+            )
+        except Exception:
+            days = (check_out - check_in).days
+
+        cleaned_full_name = _clean_str(full_name)
+        cleaned_field_name = _clean_str(field_name)
+
+        if not cleaned_full_name or not cleaned_field_name:
+            # после очистки строка оказалась пустой (например, ячейка
+            # содержала только NBSP) — пропускаем как служебную
+            continue
+        if check_in > check_out:
+            logger.error(
+                "PARSE_ERROR inverted dates: %s row=%s %s > %s",
+                ws.title, row[0].row, check_in, check_out
+            )
+            continue
+        actual_days = (check_out - check_in).days
+
+        if days != actual_days:
+            logger.warning(
+                "DAYS_MISMATCH: %s row=%s excel=%s actual=%s",
+                ws.title,
+                row[0].row,
+                days,
+                actual_days,
+            )
         
-        if cv(0):
-            ctx_location = cv(0)
-        if cv(1):
-            ctx_path = cv(1)
-        if cv(2):
-            list_of_rooms = []
-            ctx_room = cv(2)
-        if cv(3) and cv(2):
-            ctx_seats = cv(3)
-            ctx_room_unique = cv(3) +'a'
-            list_of_rooms.append(ctx_room_unique)
-        elif cv(3):
-            ctx_seats = cv(3)
-            ctx_room_unique = cv(3)
-            if ctx_room_unique+'a' in list_of_rooms:
-                for x in 'bcdefg':
-                    if ctx_room_unique+x not in list_of_rooms:
-                        ctx_room_unique = ctx_room_unique + x
-                        list_of_rooms.append(ctx_room_unique)
-                        break
-            else:
-                ctx_room_unique = cv(3)+'a' 
-                list_of_rooms.append(ctx_room_unique)
-        
-        fio_raw = cv(5)
-        if not fio_raw:
-            continue  # пустая строка
+        yield ParsedRequestRow(
+            full_name=cleaned_full_name,
 
-        position_raw = cv(6)
-        shift = cv(7) or ""
+            position=(
+                _clean_str(position)
+                if position
+                else None
+            ) or None,
 
-        # Дни: индексы 8..38 (0-based) = колонки I..AM = дни 1..31
-        # Передаём сами ячейки — нужны и значения и цвет заливки
-        day_cells = [row[c] for c in range(8, 39)]
+            field_name=cleaned_field_name,
 
-        blocks = _contiguous_blocks(day_cells)
+            check_in=check_in,
+            check_out=check_out,
 
-        if not blocks:
-            continue  # жилец отсутствовал весь месяц — пропускаем
+            days=days,
 
-        # Список имён
-        names = [n.strip() for n in fio_raw.split("/") if n.strip()]
-        n = len(names)
-        positions = _split_slash(position_raw, n)
-        for k in blocks:
-            print(names,month,min(k[1], _days_in_month(year, month)))
-        
-        if n == 1:
-            dates = []
-            customer = blocks[0][2]
-            for k in blocks:
-                dates.append((
-                    date(year, month, k[0]),
-                    date(year, month, min(k[1], _days_in_month(year, month)))
-                ))
-            yield {
-                    "расположение": ctx_location,
-                    "путь": ctx_path,
-                    "комната": ctx_room,
-                    "мест": ctx_seats,
-                    "пол": cv(4) or "",
-                    "смена": shift,
-                    "full_name": names[0],
-                    "position": positions[0],
-                    "customer": customer,
-                    "days": dates,
-                    "room_unique_id": ctx_room_unique,
-                    "workplace": cv(40)
-                }
-        else:
-            # ---- несколько жильцов ----
-            res = curr_cust_and_date(blocks,n)
-            # Определяем, брать i-й блок 
-            for i, name in enumerate(names):
-                dates = []
-                if res is None:
-                    break
-                
-                customer = res[i][0][2]
-                for k in res[i]:
-                    dates.append((
-                        date(year, month, k[0]),
-                        date(year, month, min(k[1], _days_in_month(year, month)))
-                    ))
-                yield {
-                        "расположение": ctx_location,
-                        "путь": ctx_path,
-                        "комната": ctx_room,
-                        "мест": ctx_seats,
-                        "пол": cv(4),
-                        "смена": shift,
-                        "full_name": name,
-                        "position": positions[i],
-                        "customer": customer,
-                        "days": dates,
-                        "room_unique_id": ctx_room_unique,
-                        "workplace": cv(40),
-                    }
+            customer_name=(
+                _clean_str(customer_name)
+                if customer_name
+                else None
+            ) or None,
 
-    
-def _days_in_month(year: int, month: int) -> int:
-    if month == 12:
-        return 31
-    return (date(year, month + 1, 1) - timedelta(days=1)).day
+            contract_num=contract_num,
+            contract_date=contract_date,
+
+            eol_fio=(
+                _clean_str(eol_fio)
+                if eol_fio
+                else None
+            ) or None,
+
+            is_full_form = bool(contract_raw and str(contract_raw).strip()),
+
+            sheet_name=ws.title,
+
+            row_number=row[0].row,
+        )
+
+        parsed_count += 1
+
+    logger.info(
+        "PARSE_SHEET: лист '%s': распознано строк=%s, пропущено пустых/служебных=%s",
+        ws.title, parsed_count, skipped_empty,
+    )
 
 
-# ---------------------------------------------------------------------------
-# Хелпер: все листы месяцев
-# ---------------------------------------------------------------------------
+def parse_workbook(wb_or_path):
+    """
+    Перебирает все листы книги.
+    """
 
-MONTHS_RU = {
-    "январь": 1, "февраль": 2, "март": 3, "апрель": 4,
-    "май": 5, "июнь": 6, "июль": 7, "август": 8,
-    "сентябрь": 9, "октябрь": 10, "ноябрь": 11, "декабрь": 12,
-}
-
-
-def parse_all_months(wb_or_path, year: int) -> Generator[dict, None, None]:
-    """Перебирает все листы-месяцы в книге."""
     if isinstance(wb_or_path, (str, bytes)):
-        wb = load_workbook(wb_or_path, data_only=False)
+        wb = load_workbook(
+            wb_or_path,
+            data_only=True
+        )
+
     elif hasattr(wb_or_path, "read"):
-        content = wb_or_path.read()
-        wb = load_workbook(io.BytesIO(content), data_only=False)
+        wb = load_workbook(
+            io.BytesIO(wb_or_path.read()),
+
+            
+            data_only=True
+        )
+
     else:
         wb = wb_or_path
 
+    logger.info("PARSE_WORKBOOK: листов в книге=%s: %s", len(wb.sheetnames), wb.sheetnames)
+
+    total = 0
     for sheet_name in wb.sheetnames:
-        normalized = sheet_name.strip().lower().replace(" ", "")
-        for ru_month, month_num in MONTHS_RU.items():
-            if ru_month in normalized:
-                yield from parse_sheet(wb, sheet_name, year, month_num)
-                break
+        for parsed_row in parse_sheet(wb[sheet_name]):
+            total += 1
+            yield parsed_row
 
-
+    logger.info("PARSE_WORKBOOK: всего строк распознано по всем листам=%s", total)

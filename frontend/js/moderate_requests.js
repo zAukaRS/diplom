@@ -1,73 +1,122 @@
-let fieldId = null;
 document.addEventListener("DOMContentLoaded", async () => {
     if (!getToken()) { window.location.href = "/login"; return; }
-    // Получаем текущего пользователя, чтобы узнать field_id
-    const userRes = await apiFetch("/api/current_user");
-    const currentUser = await userRes.json();
-    fieldId = currentUser.field_id; // для админа поля это есть, для глобального админа нужно выбрать поле (упростим: покажем все или выбор)
-    if (!fieldId) {
-        // глобальный админ – предложим выбрать поле из списка
-        // добавим выбор
-        const container = document.querySelector(".main-content");
-        const selectDiv = document.createElement("div");
-        selectDiv.innerHTML = `Выберите месторождение: <select id="fieldSelect"></select> <button id="loadBtn">Загрузить</button>`;
-        container.prepend(selectDiv);
-        const fieldsRes = await apiFetch("/api/fields");
-        const fields = await fieldsRes.json();
-        const select = document.getElementById("fieldSelect");
-        fields.forEach(f => {
-            const opt = document.createElement("option");
-            opt.value = f.id;
-            opt.textContent = f.name;
-            select.appendChild(opt);
-        });
-        document.getElementById("loadBtn").addEventListener("click", () => {
-            fieldId = select.value;
-            loadRequests();
-        });
-    } else {
-        document.getElementById("fieldName").textContent = currentUser.field_name || "ваше";
-        loadRequests();
-    }
-});
-async function loadRequests() {
-    if (!fieldId) return;
-    const res = await apiFetch(`/api/requests/field/${fieldId}`);
-    const requests = await res.json();
+
     const tbody = document.querySelector("#requestsTable tbody");
-    tbody.innerHTML = "";
-    for (const r of requests) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-            <td>${r.username}</td>
-            <td>${r.check_in} — ${r.check_out}</td>
-            <td>${r.comment || ""}</td>
-            <td>${r.status}</td>
-            <td>
-                <select class="status-select" data-id="${r.id}">
-                    <option value="pending" ${r.status === "pending" ? "selected" : ""}>На рассмотрении</option>
-                    <option value="approved" ${r.status === "approved" ? "selected" : ""}>Одобрено</option>
-                    <option value="rejected" ${r.status === "rejected" ? "selected" : ""}>Отклонено</option>
-                </select>
-                <input type="text" class="admin-comment" placeholder="Комментарий" value="${r.admin_comment || ""}">
-                <button class="save-btn" data-id="${r.id}">Сохранить</button>
-            </td>
-        `;
-        tbody.appendChild(tr);
+
+    // Загрузка списка полей
+    const fieldsRes = await apiFetch("/api/fields");
+    const fields = await fieldsRes.json();
+    const fieldMap = {};
+    fields.forEach(f => fieldMap[f.id] = f.name);
+
+    async function loadPendingRequests() {
+        const res = await apiFetch("/api/requests/pending");
+        const requests = await res.json();
+        tbody.innerHTML = "";
+        for (const req of requests) {
+            const tr = document.createElement("tr");
+            tr.dataset.id = req.id;
+            tr.innerHTML = `
+                <td>${req.id}</td>
+                <td>${req.user_id}</td>
+                <td>${fieldMap[req.field_id] || req.field_id}</td>
+                <td>${req.check_in} — ${req.check_out}</td>
+                <td>${req.room_id || ""}</td>
+                <td class="editable" data-field="customer">${req.customer || ""}</td>
+                <td class="editable" data-field="contract_num">${req.contract_num || ""}</td>
+                <td class="editable" data-field="contract_date">${req.contract_date || ""}</td>
+                <td class="editable" data-field="eol_fio">${req.eol_fio || ""}</td>
+                <td class="editable" data-field="position">${req.position || ""}</td>
+                <td class="editable" data-field="comment">${req.comment || ""}</td>
+                <td class="actions">
+                    <button class="edit-btn">Редактировать</button>
+                    <button class="approve-btn">Одобрить</button>
+                    <button class="reject-btn">Отклонить</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        }
+        attachEventHandlers();
     }
-    // обработчики
-    document.querySelectorAll(".save-btn").forEach(btn => {
-        btn.addEventListener("click", async (e) => {
-            const id = btn.dataset.id;
-            const row = btn.closest("tr");
-            const status = row.querySelector(".status-select").value;
-            const adminComment = row.querySelector(".admin-comment").value;
-            await apiFetch(`/api/requests/${id}`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ status, admin_comment: adminComment })
+
+    function attachEventHandlers() {
+        // Редактирование
+        document.querySelectorAll(".edit-btn").forEach(btn => {
+            btn.addEventListener("click", async (e) => {
+                const row = btn.closest("tr");
+                const id = row.dataset.id;
+                const editables = row.querySelectorAll(".editable");
+                // Если уже в режиме редактирования – сохраняем
+                if (btn.textContent === "Сохранить") {
+                    const updateData = {};
+                    editables.forEach(cell => {
+                        const input = cell.querySelector("input");
+                        if (input) {
+                            updateData[cell.dataset.field] = input.value;
+                        }
+                    });
+                    try {
+                        const res = await apiFetch(`/api/requests/${id}`, {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(updateData)
+                        });
+                        if (res.ok) {
+                            loadPendingRequests();
+                        } else {
+                            alert("Ошибка сохранения");
+                        }
+                    } catch (err) {
+                        alert("Ошибка сервера");
+                    }
+                } else {
+                    // Вход в режим редактирования
+                    editables.forEach(cell => {
+                        const value = cell.textContent.trim();
+                        const input = document.createElement("input");
+                        input.value = value;
+                        input.style.width = "100%";
+                        cell.innerHTML = "";
+                        cell.appendChild(input);
+                    });
+                    btn.textContent = "Сохранить";
+                }
             });
-            loadRequests(); // перезагрузить
         });
-    });
-}
+
+        // Одобрение
+        document.querySelectorAll(".approve-btn").forEach(btn => {
+            btn.addEventListener("click", async (e) => {
+                const row = btn.closest("tr");
+                const id = row.dataset.id;
+                if (confirm("Одобрить эту заявку?")) {
+                    const res = await apiFetch(`/api/requests/${id}/approve`, { method: "POST" });
+                    if (res.ok) {
+                        loadPendingRequests();
+                    } else {
+                        alert("Ошибка одобрения");
+                    }
+                }
+            });
+        });
+
+        // Отклонение
+        document.querySelectorAll(".reject-btn").forEach(btn => {
+            btn.addEventListener("click", async (e) => {
+                const row = btn.closest("tr");
+                const id = row.dataset.id;
+                const comment = prompt("Введите комментарий к отклонению (необязательно):");
+                if (comment !== null) {
+                    const res = await apiFetch(`/api/requests/${id}/reject?admin_comment=${encodeURIComponent(comment)}`, { method: "POST" });
+                    if (res.ok) {
+                        loadPendingRequests();
+                    } else {
+                        alert("Ошибка отклонения");
+                    }
+                }
+            });
+        });
+    }
+
+    loadPendingRequests();
+});

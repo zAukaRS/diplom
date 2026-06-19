@@ -1,66 +1,57 @@
-// ===== JWT АВТОРИЗАЦИЯ =====
+// ========== АВТОРИЗАЦИЯ ==========
 function getToken() { return localStorage.getItem("access_token"); }
-function setTokens(access, refresh) {
-    localStorage.setItem("access_token", access);
-    localStorage.setItem("refresh_token", refresh);
-}
-function clearTokens() {
+function setAccessToken(access) { localStorage.setItem("access_token", access); }
+function clearAccessToken() {
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
 }
+
 async function refreshAccessToken() {
-    const refresh = localStorage.getItem("refresh_token");
-    if (!refresh) return false;
     try {
         const res = await fetch("/api/auth/refresh", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ refresh_token: refresh })
+            credentials: "include"
         });
         if (!res.ok) return false;
         const data = await res.json();
-        setTokens(data.access_token, data.refresh_token);
+        setAccessToken(data.access_token);
         return true;
     } catch { return false; }
 }
+
 async function apiFetch(url, options = {}) {
     const token = getToken();
     const headers = {
         ...(options.headers || {}),
         ...(token ? { "Authorization": `Bearer ${token}` } : {})
     };
-    let response = await fetch(url, { ...options, headers });
+    let response = await fetch(url, { ...options, headers, credentials: "include" });
     if (response.status === 401) {
         const refreshed = await refreshAccessToken();
         if (refreshed) {
-            const newHeaders = {
-                ...(options.headers || {}),
-                "Authorization": `Bearer ${getToken()}`
-            };
-            response = await fetch(url, { ...options, headers: newHeaders });
+            const newToken = getToken();
+            headers["Authorization"] = `Bearer ${newToken}`;
+            response = await fetch(url, { ...options, headers, credentials: "include" });
         } else {
-            clearTokens();
-            window.location.href = "/login";
+            clearAccessToken();
+            if (!window.location.pathname.startsWith("/login")) {
+                window.location.href = "/login";
+            }
             return null;
         }
     }
     return response;
 }
+
 async function logout() {
-    const refresh = localStorage.getItem("refresh_token");
-    if (refresh) {
-        try {
-            await fetch("/api/auth/logout", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ refresh_token: refresh })
-            });
-        } catch(e) { console.warn("Logout failed", e); }
-    }
-    clearTokens();
+    try {
+        await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    } catch(e) { console.warn("Logout failed", e); }
+    clearAccessToken();
     window.location.href = "/login";
 }
-// ===== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =====
+
+// ========== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ==========
 let editMode = false;
 let dragStart = null;
 let dragMode = null;
@@ -69,7 +60,6 @@ const SHIFT_OPTIONS = ["", "дневная", "ночная"];
 const POSITION_OPTIONS = ["", "Пекарь", "Повар", "Слесарь-ремонтник", "Инженер", "Техник", "Механик", "Электрик", "Оператор", "Мастер", "Рабочий"];
 let customers = [];
 let fieldsList = [];
-// Пагинация
 let currentOffset = 0;
 let currentLimit = 30;
 let isLoading = false;
@@ -78,24 +68,28 @@ let currentMonth = null;
 let currentYear = null;
 let currentFieldId = "";
 let currentWord = "";
-// ===== ЗАГРУЗКА ДАННЫХ =====
+
+// ========== ЗАГРУЗКА ДАННЫХ ==========
 async function loadCustomers() {
     try {
         const res = await apiFetch("/api/customers");
+        if (!res) return;
         customers = await res.json();
     } catch (err) {
         console.error("Ошибка загрузки customers:", err);
         customers = [];
     }
 }
+
 async function loadFields() {
     try {
         const response = await apiFetch("/api/fields");
+        if (!response) return;
         const data = await response.json();
         fieldsList = data;
         const select = document.getElementById("fieldFilter");
         if (select) {
-            select.innerHTML = '<option value="">Выберите месторождение</option>';
+            select.innerHTML = '<option value="">Все месторождения</option>';
             data.forEach(field => {
                 const option = document.createElement("option");
                 option.value = field.id;
@@ -107,40 +101,64 @@ async function loadFields() {
         console.error("Ошибка загрузки месторождений:", err);
     }
 }
+
 function daysInMonth(month, year) {
     return new Date(year, month, 0).getDate();
 }
-function generateCalendar(days) {
+
+function generateCalendar() {
     const head = document.getElementById("calendarHead");
     if (!head) return;
     let row = "<tr>";
-    row += "<th>Расположение</th>";
-    row += "<th>Путь</th>";
-    row += "<th>№ комнаты</th>";
-    row += "<th>К-во мест</th>";
-    row += "<th>Пол</th>";
-    row += "<th>ФИО</th>";
-    row += "<th>Должность</th>";
-    row += "<th>Смена</th>";
-    for (let i = 1; i <= days; i++) row += `<th>${i}</th>`;
-    row += "<th>Заказчик</th>";
-    row += "<th>Месторождение</th>";
+    row += "<th>Расположение</th><th>Путь</th><th>№ комнаты</th><th>К-во мест</th><th>Пол</th><th>ФИО</th><th>Должность</th><th>Дата заезда</th><th>Дата выезда</th><th>Дней</th><th>Заказчик</th><th>Действия</th>";
     row += "</tr>";
     head.innerHTML = row;
 }
+
 function searchResidents() { loadCalendar(true); }
 function clearSearch() {
     document.getElementById("searchWord").value = "";
     document.getElementById("fieldFilter").value = "";
     loadCalendar(true);
 }
-function downloadReport() {
+
+// ========== СКАЧИВАНИЕ ОТЧЁТА ==========
+async function downloadReport() {
     const dateFrom = document.getElementById("dateFrom")?.value;
     const dateTo = document.getElementById("dateTo")?.value;
+    const costPerDay = document.getElementById("costPerDay")?.value;
+
     if (!dateFrom || !dateTo) { alert("Выберите обе даты!"); return; }
     if (dateFrom > dateTo) { alert("Дата начала не может быть позже даты конца!"); return; }
-    window.open(`/api/get_report?date_in=${dateFrom}&date_out=${dateTo}`, "_blank");
+
+    let url = `/api/get_report?date_in=${dateFrom}&date_out=${dateTo}`;
+    if (costPerDay && !isNaN(parseInt(costPerDay))) {
+        url += `&cost_of_day=${parseInt(costPerDay)}`;
+    }
+
+    try {
+        const response = await apiFetch(url);
+        if (!response) return;
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            alert(err.detail || "Ошибка загрузки отчёта");
+            return;
+        }
+        const blob = await response.blob();
+        const urlBlob = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = urlBlob;
+        a.download = `report_${dateFrom}_${dateTo}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(urlBlob);
+    } catch (err) {
+        console.error(err);
+        alert("Не удалось скачать отчёт");
+    }
 }
+
 function toggleEditMode() {
     editMode = !editMode;
     const btn = document.getElementById("editModeBtn");
@@ -151,14 +169,15 @@ function toggleEditMode() {
     }
     loadCalendar(true);
 }
-// Создание строки жильца
-function createResidentRow(r, days, editModeFlag) {
+
+// ========== СТРОКА ТАБЛИЦЫ ==========
+function createResidentRow(r, editModeFlag) {
     const row = document.createElement("tr");
     if (r.status == 1) row.classList.add("row-repair");
 
     const tdLocation = document.createElement("td");
     if (editModeFlag) {
-        tdLocation.appendChild(makeStatusSelect(r.status, r.id));
+        tdLocation.appendChild(makeStatusSelect(r.status, r.id, r.type));
     } else {
         tdLocation.textContent = r.room_location || "";
     }
@@ -178,7 +197,7 @@ function createResidentRow(r, days, editModeFlag) {
 
     const tdGender = document.createElement("td");
     if (editModeFlag) {
-        tdGender.appendChild(makeEditSelect(GENDER_OPTIONS, r.gender, r.id, "gender"));
+        tdGender.appendChild(makeEditSelect(GENDER_OPTIONS, r.gender, r.id, "gender", r.type));
     } else {
         tdGender.textContent = r.gender || "";
     }
@@ -190,45 +209,56 @@ function createResidentRow(r, days, editModeFlag) {
 
     const tdPosition = document.createElement("td");
     if (editModeFlag) {
-        tdPosition.appendChild(makeEditSelect(POSITION_OPTIONS, r.position, r.id, "position"));
+        tdPosition.appendChild(makeEditSelect(POSITION_OPTIONS, r.position, r.id, "position", r.type));
     } else {
         tdPosition.textContent = r.position || "";
     }
     row.appendChild(tdPosition);
 
-    const tdShift = document.createElement("td");
-    if (editModeFlag) {
-        tdShift.appendChild(makeEditSelect(SHIFT_OPTIONS, r.shift, r.id, "shift"));
-    } else {
-        tdShift.textContent = r.shift || "";
-    }
-    row.appendChild(tdShift);
+    const tdCheckIn = document.createElement("td");
+    tdCheckIn.textContent = r.check_in || "";
+    row.appendChild(tdCheckIn);
 
-    for (let i = 1; i <= days; i++) {
-        const selectedId = r.days_info?.[i] || "";
-        const td = document.createElement("td");
-        const select = document.createElement("select");
-        select.className = "day-select";
-        select.dataset.resident = r.id;
-        select.dataset.day = i;
-        select.title = "Выберите заказчика";
-        select.innerHTML = `<option value="">-</option>` +
-            customers.map(c => `<option value="${c.id}" ${c.id == selectedId ? "selected" : ""}>${c.name}</option>`).join("");
-        td.appendChild(select);
-        row.appendChild(td);
-    }
+    const tdCheckOut = document.createElement("td");
+    tdCheckOut.textContent = r.check_out || "";
+    row.appendChild(tdCheckOut);
+
+    const tdDays = document.createElement("td");
+    tdDays.textContent = r.days || "";
+    row.appendChild(tdDays);
 
     const tdCustomer = document.createElement("td");
-    tdCustomer.textContent = r.workplace || "";
+    tdCustomer.textContent = r.customer || "";
     row.appendChild(tdCustomer);
 
-    const tdField = document.createElement("td");
-    tdField.textContent = r.field || "";
-    row.appendChild(tdField);
-
+    const tdActions = document.createElement("td");
+    if (editModeFlag) {
+        const convertBtn = document.createElement("button");
+        convertBtn.textContent = r.type === "formal" ? "➡ В гостевые" : "⬅ В формальные";
+        convertBtn.className = "btn-compact";
+        convertBtn.style.background = "#ff9800";
+        convertBtn.onclick = async () => {
+            if (!confirm(`Преобразовать запись "${r.full_name}" из ${r.type === "formal" ? "формальной" : "гостевой"} в ${r.type === "formal" ? "гостевую" : "формальную"}?`)) return;
+            const target = r.type === "formal" ? "guest" : "formal";
+            const resp = await apiFetch("/api/convert_resident_type", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: r.id, target_type: target })
+            });
+            if (resp && resp.ok) {
+                alert("Тип записи изменён");
+                loadCalendar(true);
+            } else {
+                alert("Ошибка конвертации");
+            }
+        };
+        tdActions.appendChild(convertBtn);
+    }
+    row.appendChild(tdActions);
     return row;
 }
-function makeEditSelect(options, currentValue, residentId, field) {
+
+function makeEditSelect(options, currentValue, residentId, field, recordType) {
     const select = document.createElement("select");
     select.className = "edit-select";
     options.forEach(opt => {
@@ -243,8 +273,9 @@ function makeEditSelect(options, currentValue, residentId, field) {
             const response = await apiFetch("/api/update_resident", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id: residentId, [field]: select.value })
+                body: JSON.stringify({ id: residentId, type: recordType, [field]: select.value })
             });
+            if (!response) return;
             const result = await response.json();
             if (result.status !== "ok") alert("Ошибка сохранения");
         } catch (err) {
@@ -253,7 +284,8 @@ function makeEditSelect(options, currentValue, residentId, field) {
     });
     return select;
 }
-function makeStatusSelect(currentStatus, residentId) {
+
+function makeStatusSelect(currentStatus, residentId, recordType) {
     const select = document.createElement("select");
     select.className = "edit-select status-select";
     const options = [
@@ -272,17 +304,15 @@ function makeStatusSelect(currentStatus, residentId) {
             const response = await apiFetch("/api/update_resident", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id: residentId, status: parseInt(select.value) })
+                body: JSON.stringify({ id: residentId, type: recordType, status: parseInt(select.value) })
             });
+            if (!response) return;
             const result = await response.json();
             if (result.status !== "ok") alert("Ошибка обновления статуса");
             else {
                 const row = select.closest("tr");
-                if (parseInt(select.value) === 1) {
-                    row.classList.add("row-repair");
-                } else {
-                    row.classList.remove("row-repair");
-                }
+                if (parseInt(select.value) === 1) row.classList.add("row-repair");
+                else row.classList.remove("row-repair");
             }
         } catch (err) {
             console.error("Ошибка:", err);
@@ -291,82 +321,13 @@ function makeStatusSelect(currentStatus, residentId) {
     });
     return select;
 }
-// ===== DRAG FILL =====
-function initDragFill() {
-    const tbody = document.getElementById("calendarBody");
-    if (!tbody) return;
-    tbody.addEventListener("mousedown", (e) => {
-        const td = e.target.closest("td");
-        if (!td) return;
-        if (e.target.tagName === "SELECT") return;
-        const sel = td.querySelector(".day-select");
-        if (!sel) return;
-        dragStart = {
-            residentId: sel.dataset.resident,
-            day: parseInt(sel.dataset.day),
-            value: sel.value
-        };
-        dragMode = dragStart.value ? "fill" : "clear";
-        sel.classList.add("drag-highlight");
-        e.preventDefault();
-    });
-    tbody.addEventListener("mouseover", (e) => {
-        if (!dragStart) return;
-        const td = e.target.closest("td");
-        if (!td) return;
-        const sel = td.querySelector(".day-select");
-        if (!sel || sel.dataset.resident !== dragStart.residentId) return;
-        const currentDay = parseInt(sel.dataset.day);
-        const start = Math.min(dragStart.day, currentDay);
-        const end = Math.max(dragStart.day, currentDay);
-        tbody.querySelectorAll(`.day-select[data-resident='${dragStart.residentId}']`).forEach(s => s.classList.remove("drag-highlight"));
-        for (let i = start; i <= end; i++) {
-            const cell = tbody.querySelector(`.day-select[data-resident='${dragStart.residentId}'][data-day='${i}']`);
-            if (cell) cell.classList.add("drag-highlight");
-        }
-    });
-    document.addEventListener("mouseup", async () => {
-        if (!dragStart) return;
-        const selList = tbody.querySelectorAll(`.day-select[data-resident='${dragStart.residentId}'].drag-highlight`);
-        const saves = [];
-        for (const sel of selList) {
-            sel.value = dragMode === "fill" ? dragStart.value : "";
-            saves.push(saveDay(sel));
-        }
-        await Promise.all(saves);
-        selList.forEach(s => s.classList.remove("drag-highlight"));
-        dragStart = null;
-        dragMode = null;
-    });
-}
-async function saveDay(selectEl) {
-    const residentId = selectEl.dataset.resident;
-    const day = selectEl.dataset.day;
-    const month = document.getElementById("monthFilter")?.value;
-    const year = document.getElementById("yearFilter")?.value;
-    const customerId = selectEl.value ? parseInt(selectEl.value) : null;
-    if (!residentId || !day || !month || !year) return;
-    try {
-        await apiFetch("/api/update_day", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                resident_id: parseInt(residentId),
-                day: parseInt(day),
-                month: parseInt(month),
-                year: parseInt(year),
-                customer_id: customerId
-            })
-        });
-    } catch (err) {
-        console.error("Ошибка при сохранении дня:", err);
-    }
-}
-// ===== ПАГИНАЦИЯ И ЗАГРУЗКА ТАБЛИЦЫ =====
+
+// ========== ПАГИНАЦИЯ И ЗАГРУЗКА ТАБЛИЦЫ ==========
 function showLoader(show) {
     let loader = document.getElementById("tableLoader");
     if (!loader && show) {
         const container = document.querySelector(".table-section");
+        if (!container) return;
         loader = document.createElement("div");
         loader.id = "tableLoader";
         loader.className = "loader";
@@ -375,6 +336,7 @@ function showLoader(show) {
     }
     if (loader) loader.style.display = show ? "block" : "none";
 }
+
 function ensureLoadMoreButton() {
     if (document.getElementById("loadMoreBtn")) return;
     const btn = document.createElement("button");
@@ -384,26 +346,38 @@ function ensureLoadMoreButton() {
     btn.style.marginTop = "10px";
     btn.onclick = () => loadCalendar(false);
     const container = document.querySelector(".table-section");
-    container.appendChild(btn);
+    if (container) container.appendChild(btn);
 }
+
 function removeLoadMoreButton() {
     const btn = document.getElementById("loadMoreBtn");
     if (btn) btn.remove();
 }
+
 function clearTable() {
     const tbody = document.getElementById("calendarBody");
     if (tbody) tbody.innerHTML = "";
     removeLoadMoreButton();
 }
+
 async function loadCalendar(reset = true) {
     if (isLoading) return;
     isLoading = true;
     showLoader(true);
-    const year = document.getElementById("yearFilter")?.value || "2025";
-    const month = document.getElementById("monthFilter")?.value || "1";
-    const fieldId = document.getElementById("fieldFilter")?.value || "";
+
+    const year = document.getElementById("yearFilter")?.value || new Date().getFullYear();
+    const month = document.getElementById("monthFilter")?.value || (new Date().getMonth() + 1);
+    let fieldId = document.getElementById("fieldFilter")?.value || "";
     const word = document.getElementById("searchWord")?.value || "";
-    const days = daysInMonth(parseInt(month), parseInt(year));
+
+    if (!fieldId || fieldId === "") {
+        const firstOption = document.querySelector("#fieldFilter option:not([value=''])");
+        if (firstOption) {
+            fieldId = firstOption.value;
+            document.getElementById("fieldFilter").value = fieldId;
+        }
+    }
+
     if (reset) {
         currentOffset = 0;
         hasMore = true;
@@ -411,37 +385,31 @@ async function loadCalendar(reset = true) {
         currentYear = year;
         currentFieldId = fieldId;
         currentWord = word;
-        generateCalendar(days);
+        generateCalendar();
         clearTable();
-    } else if (
-        month !== currentMonth ||
-        year !== currentYear ||
-        fieldId !== currentFieldId ||
-        word !== currentWord
-    ) {
-        loadCalendar(true);
-        isLoading = false;
-        return;
     }
+
     let url = `/api/residents?month=${month}&year=${year}&limit=${currentLimit}&offset=${currentOffset}`;
     if (fieldId) url += `&by_field=${fieldId}`;
     if (word) url += `&word=${encodeURIComponent(word)}`;
+
     try {
         const response = await apiFetch(url);
         if (!response) return;
         const residents = await response.json();
-        if (!residents || residents.length === 0) {
+
+        if (!Array.isArray(residents) || residents.length === 0) {
             hasMore = false;
-            if (reset && residents.length === 0) {
+            if (reset) {
                 const tbody = document.getElementById("calendarBody");
-                if (tbody) tbody.innerHTML = '<tr><td colspan="20" style="text-align:center;">Ничего не найдено</td></tr>';
+                if (tbody) tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:20px;">Ничего не найдено</td></tr>';
             }
             removeLoadMoreButton();
         } else {
             const tbody = document.getElementById("calendarBody");
             residents.forEach(r => {
-                const row = createResidentRow(r, days, editMode);
-                tbody.appendChild(row);
+                const row = createResidentRow(r, editMode);
+                if (tbody) tbody.appendChild(row);
             });
             currentOffset += residents.length;
             hasMore = residents.length === currentLimit;
@@ -451,214 +419,442 @@ async function loadCalendar(reset = true) {
     } catch (err) {
         console.error("Ошибка загрузки:", err);
         const tbody = document.getElementById("calendarBody");
-        if (tbody && reset) tbody.innerHTML = '<tr><td colspan="20" style="color:red;">Ошибка загрузки</td></tr>';
+        if (tbody && reset) tbody.innerHTML = '<tr><td colspan="12" style="color:red;padding:20px;">Ошибка загрузки данных</td></tr>';
     } finally {
         isLoading = false;
         showLoader(false);
     }
 }
-// ===== ДОБАВЛЕНИЕ НОВОГО РЕЗИДЕНТА =====
+
+// ========== ФОРМА ДОБАВЛЕНИЯ ЗАПИСИ ==========
 function addNewRow() {
     const tbody = document.getElementById("calendarBody");
     if (!tbody) return;
     const oldNewRow = document.getElementById("new-resident-row");
     if (oldNewRow) oldNewRow.remove();
+
     const month = parseInt(document.getElementById("monthFilter")?.value, 10);
     const year = parseInt(document.getElementById("yearFilter")?.value, 10);
     if (!month || !year) {
-        alert("Сначала выберите месяц и год, затем нажмите Показать");
+        alert("Сначала выберите месяц и год");
         return;
     }
-    const days = daysInMonth(month, year);
-    const head = document.getElementById("calendarHead");
-    if (!head?.innerHTML?.trim()) generateCalendar(days);
+
     const row = document.createElement("tr");
     row.id = "new-resident-row";
-    const tdLocation = document.createElement("td");
-    const locationSelect = document.createElement("select");
-    locationSelect.dataset.field = "location";
-    locationSelect.className = "edit-select";
-    locationSelect.innerHTML = `<option value="">—</option>
-                                <option value="Общежитие">Общежитие</option>
-                                <option value="Вагон">Вагон</option>`;
-    tdLocation.appendChild(locationSelect);
-    row.appendChild(tdLocation);
-    const tdPath = document.createElement("td");
-    const pathInput = document.createElement("input");
-    pathInput.type = "text";
-    pathInput.className = "edit-input";
-    pathInput.dataset.field = "path";
-    pathInput.placeholder = "Путь";
-    pathInput.style.width = "100%";
-    tdPath.appendChild(pathInput);
-    row.appendChild(tdPath);
-    const tdRoomNumber = document.createElement("td");
-    const roomNumberInput = document.createElement("input");
-    roomNumberInput.type = "text";
-    roomNumberInput.className = "edit-input";
-    roomNumberInput.dataset.field = "room_number";
-    roomNumberInput.placeholder = "№ комнаты";
-    roomNumberInput.style.width = "100%";
-    tdRoomNumber.appendChild(roomNumberInput);
-    row.appendChild(tdRoomNumber);
-    const tdCapacity = document.createElement("td");
-    const capacityInput = document.createElement("input");
-    capacityInput.type = "number";
-    capacityInput.className = "edit-input";
-    capacityInput.dataset.field = "room_unique_id";
-    capacityInput.placeholder = "К-во мест";
-    capacityInput.style.width = "100%";
-    tdCapacity.appendChild(capacityInput);
-    row.appendChild(tdCapacity);
-    const tdGender = document.createElement("td");
-    tdGender.appendChild(makeEditSelectNew(GENDER_OPTIONS, "gender"));
-    row.appendChild(tdGender);
-    const tdName = document.createElement("td");
-    const nameInput = document.createElement("input");
-    nameInput.type = "text";
-    nameInput.className = "edit-input";
-    nameInput.dataset.field = "full_name";
-    nameInput.placeholder = "ФИО";
+
+    const td = document.createElement("td");
+    td.colSpan = 12;
+    td.style.padding = "10px";
+    td.style.background = "#f0f9ff";
+
+    const form = document.createElement("div");
+    form.style.display = "flex";
+    form.style.flexWrap = "wrap";
+    form.style.gap = "10px";
+    form.style.alignItems = "center";
+
+    // --- ФИО (с автодополнением) ---
+    const nameInput = makeFormInput("ФИО *", "full_name", "text");
+    form.appendChild(nameInput.wrapper);
+    setupEmployeeAutocomplete(nameInput, posInputRef => {
+        if (posInputRef && posInputRef.position && posInput.select) {
+            if (POSITION_OPTIONS.includes(posInputRef.position)) {
+                posInput.select.value = posInputRef.position;
+            }
+        }
+        if (posInputRef && posInputRef.gender && genderInput.select) {
+            if (GENDER_OPTIONS.includes(posInputRef.gender)) {
+                genderInput.select.value = posInputRef.gender;
+            }
+        }
+    });
+
+    const posInput = makeFormSelect("Должность", "position", POSITION_OPTIONS);
+    form.appendChild(posInput.wrapper);
+
+    const genderInput = makeFormSelect("Пол", "gender", GENDER_OPTIONS);
+    form.appendChild(genderInput.wrapper);
+
+    const custInput = makeFormSelectFromList("Заказчик *", "customer_name", customers, "name");
+    form.appendChild(custInput.wrapper);
+
+    const fieldInput = makeFormSelectFromListId("Месторождение *", "field_id", fieldsList);
+    form.appendChild(fieldInput.wrapper);
+    const currentFieldFilter = document.getElementById("fieldFilter")?.value;
+    if (currentFieldFilter && fieldsList.some(f => f.id == currentFieldFilter)) {
+        fieldInput.select.value = currentFieldFilter;
+    }
+
+    const checkInInput = makeFormInput("Дата заезда *", "check_in", "date");
+    const firstDayOfMonth = `${year}-${String(month).padStart(2, "0")}-01`;
+    checkInInput.input.value = firstDayOfMonth;
+    form.appendChild(checkInInput.wrapper);
+
+    const checkOutInput = makeFormInput("Дата выезда *", "check_out", "date");
+    const lastDay = daysInMonth(month, year);
+    const lastDayOfMonth = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    checkOutInput.input.value = lastDayOfMonth;
+    form.appendChild(checkOutInput.wrapper);
+
+    const commentInput = makeFormInput("Комментарий", "comment", "text");
+    form.appendChild(commentInput.wrapper);
+
+    // --- Выбор комнаты ---
+    const roomWrapper = document.createElement("div");
+    roomWrapper.style.display = "flex";
+    roomWrapper.style.flexDirection = "column";
+    roomWrapper.style.gap = "4px";
+    const roomLabel = document.createElement("label");
+    roomLabel.textContent = "Комната *";
+    roomLabel.style.fontSize = "12px";
+    roomLabel.style.fontWeight = "600";
+    const roomRow = document.createElement("div");
+    roomRow.style.display = "flex";
+    roomRow.style.gap = "4px";
+    const roomSelect = document.createElement("select");
+    roomSelect.className = "edit-select";
+    roomSelect.style.padding = "4px 8px";
+    roomSelect.innerHTML = `<option value="">— сначала найдите свободные места —</option>`;
+    const findRoomsBtn = document.createElement("button");
+    findRoomsBtn.type = "button";
+    findRoomsBtn.className = "btn-compact";
+    findRoomsBtn.textContent = "🔍 Найти места";
+    findRoomsBtn.onclick = async () => {
+        await refreshAvailableRooms();
+    };
+    roomRow.appendChild(roomSelect);
+    roomRow.appendChild(findRoomsBtn);
+    roomWrapper.appendChild(roomLabel);
+    roomWrapper.appendChild(roomRow);
+    form.appendChild(roomWrapper);
+
+    async function refreshAvailableRooms() {
+        const fieldId = parseInt(fieldInput.select.value);
+        const checkIn = checkInInput.input.value;
+        const checkOut = checkOutInput.input.value;
+        if (!fieldId || isNaN(fieldId) || fieldId <= 0) {
+            alert("Выберите месторождение!");
+            return;
+        }
+        if (!checkIn || !checkOut) {
+            alert("Укажите даты заезда и выезда!");
+            return;
+        }
+        if (checkIn > checkOut) {
+            alert("Дата заезда не может быть позже даты выезда!");
+            return;
+        }
+        roomSelect.innerHTML = `<option value="">— поиск... —</option>`;
+        try {
+            const resp = await apiFetch(
+                `/api/requests/available?field_id=${fieldId}&check_in=${checkIn}&check_out=${checkOut}`
+            );
+            if (!resp || !resp.ok) {
+                roomSelect.innerHTML = `<option value="">— ошибка поиска —</option>`;
+                return;
+            }
+            const rooms = await resp.json();
+            if (!rooms || rooms.length === 0) {
+                roomSelect.innerHTML = `<option value="">— нет свободных мест —</option>`;
+                return;
+            }
+            const options = [];
+            rooms.forEach(r => {
+                const variants = (r.variants && r.variants.length) ? r.variants : [{
+                    id: r.id,
+                    room_unique_id: r.room_unique_id,
+                    capacity: r.capacity,
+                    occupied: r.occupied,
+                    free_places: r.free_places,
+                }];
+                variants.forEach(v => {
+                    const uniquePart = v.room_unique_id ? ` / ${v.room_unique_id}` : "";
+                    options.push(
+                        `<option value="${v.id}">№ ${r.room_number}${uniquePart} — свободно ${r.free_places} из ${r.capacity} (в этом варианте: ${v.free_places} из ${v.capacity})</option>`
+                    );
+                });
+            });
+            roomSelect.innerHTML = options.join("");
+        } catch (err) {
+            roomSelect.innerHTML = `<option value="">— ошибка поиска —</option>`;
+            console.error("Ошибка поиска комнат:", err);
+        }
+    }
+
+    fieldInput.select.addEventListener("change", refreshAvailableRooms);
+    checkInInput.input.addEventListener("change", refreshAvailableRooms);
+    checkOutInput.input.addEventListener("change", refreshAvailableRooms);
+    refreshAvailableRooms();
+
+    // Тип записи
+    const typeDiv = document.createElement("div");
+    typeDiv.style.display = "flex";
+    typeDiv.style.gap = "15px";
+    typeDiv.style.alignItems = "center";
+    typeDiv.style.flexBasis = "100%";
+    typeDiv.style.marginTop = "5px";
+
+    const typeLabel = document.createElement("span");
+    typeLabel.textContent = "Тип записи:";
+    typeLabel.style.fontWeight = "600";
+    typeDiv.appendChild(typeLabel);
+
+    const radioOfficial = document.createElement("input");
+    radioOfficial.type = "radio";
+    radioOfficial.name = "addType";
+    radioOfficial.value = "official";
+    radioOfficial.id = "addTypeOfficial";
+    radioOfficial.checked = true;
+    const labelOfficial = document.createElement("label");
+    labelOfficial.htmlFor = "addTypeOfficial";
+    labelOfficial.textContent = "Официальный (сотрудник)";
+    labelOfficial.style.marginRight = "5px";
+
+    const radioGuest = document.createElement("input");
+    radioGuest.type = "radio";
+    radioGuest.name = "addType";
+    radioGuest.value = "guest";
+    radioGuest.id = "addTypeGuest";
+    const labelGuest = document.createElement("label");
+    labelGuest.htmlFor = "addTypeGuest";
+    labelGuest.textContent = "Гостевой (без привязки к сотруднику)";
+
+    typeDiv.appendChild(radioOfficial);
+    typeDiv.appendChild(labelOfficial);
+    typeDiv.appendChild(radioGuest);
+    typeDiv.appendChild(labelGuest);
+    form.appendChild(typeDiv);
+
+    const btnWrapper = document.createElement("div");
+    btnWrapper.style.display = "flex";
+    btnWrapper.style.gap = "8px";
+    btnWrapper.style.alignItems = "flex-end";
+    btnWrapper.style.marginTop = "auto";
+
     const saveBtn = document.createElement("button");
     saveBtn.type = "button";
     saveBtn.className = "btn-compact";
-    saveBtn.textContent = "Сохранить";
-    saveBtn.style.marginLeft = "6px";
-    saveBtn.onclick = () => saveNewRow(row, month, year);
-    tdName.appendChild(nameInput);
-    tdName.appendChild(saveBtn);
-    row.appendChild(tdName);
-    const tdPosition = document.createElement("td");
-    tdPosition.appendChild(makeEditSelectNew(POSITION_OPTIONS, "position"));
-    row.appendChild(tdPosition);
-    const tdShift = document.createElement("td");
-    tdShift.appendChild(makeEditSelectNew(SHIFT_OPTIONS, "shift"));
-    row.appendChild(tdShift);
-    for (let i = 1; i <= days; i++) {
-        const td = document.createElement("td");
-        const select = document.createElement("select");
-        select.className = "day-select-new";
-        select.dataset.day = i;
-        select.innerHTML = `<option value="">-</option>` +
-            customers.map(c => `<option value="${c.id}">${c.name}</option>`).join("");
-        td.appendChild(select);
-        row.appendChild(td);
-    }
-    const tdCustomer = document.createElement("td");
-    const custSelect = document.createElement("select");
-    custSelect.dataset.field = "customer";
-    custSelect.className = "edit-select";
-    custSelect.innerHTML = '<option value="">Выберите заказчика</option>' +
-        customers.map(c => `<option value="${c.name}">${c.name}</option>`).join("");
-    tdCustomer.appendChild(custSelect);
-    row.appendChild(tdCustomer);
-    const tdField = document.createElement("td");
-    const fieldSelect = document.createElement("select");
-    fieldSelect.dataset.field = "field";
-    fieldSelect.className = "edit-select";
-    fieldSelect.innerHTML = '<option value="">Выберите месторождение</option>' +
-        fieldsList.map(f => `<option value="${f.name}">${f.name}</option>`).join("");
-    tdField.appendChild(fieldSelect);
-    row.appendChild(tdField);
+    saveBtn.textContent = "💾 Сохранить";
+    saveBtn.onclick = () => {
+        const isOfficial = document.querySelector('input[name="addType"]:checked')?.value === "official";
+        saveNewResidentRow({
+            full_name: nameInput.input.value.trim(),
+            position: posInput.select.value,
+            gender: genderInput.select.value,
+            customer_name: custInput.select.value,
+            field_id: parseInt(fieldInput.select.value),
+            check_in: checkInInput.input.value,
+            check_out: checkOutInput.input.value,
+            room_id: parseInt(roomSelect.value),
+            comment: commentInput.input.value,
+            eol_fio: nameInput.input.value.trim(),
+            add_in_official: isOfficial
+        });
+    };
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "btn-compact";
+    cancelBtn.style.background = "#6c757d";
+    cancelBtn.textContent = "✖ Отмена";
+    cancelBtn.onclick = () => row.remove();
+
+    btnWrapper.appendChild(saveBtn);
+    btnWrapper.appendChild(cancelBtn);
+    form.appendChild(btnWrapper);
+
+    td.appendChild(form);
+    row.appendChild(td);
     tbody.insertBefore(row, tbody.firstChild);
 }
-function makeEditSelectNew(options, field) {
-    const select = document.createElement("select");
-    select.className = "edit-select";
-    select.dataset.field = field;
-    options.forEach(opt => {
-        const option = document.createElement("option");
-        option.value = opt;
-        option.textContent = opt || "—";
-        select.appendChild(option);
-    });
-    return select;
-}
-async function saveNewRow(row, month, year) {
-    const getValue = (field) => {
-        const el = row.querySelector(`[data-field="${field}"]`);
-        return el ? el.value : "";
-    };
-    const full_name = getValue("full_name");
-    if (!full_name) { alert("Введите ФИО!"); return; }
-    const field = getValue("field");
-    if (!field) { alert("Выберите месторождение!"); return; }
-    const customer = getValue("customer");
-    if (!customer) { alert("Выберите заказчика!"); return; }
-    const room_unique_id = getValue("room_unique_id");
-    if (!room_unique_id) { alert("Укажите количество мест в комнате!"); return; }
-    const daySelects = row.querySelectorAll(".day-select-new");
-    const filled = Array.from(daySelects)
-        .map(sel => ({ day: parseInt(sel.dataset.day), customerId: sel.value }))
-        .filter(item => item.customerId && item.customerId !== "");
-    if (filled.length === 0) {
-        alert("Выберите хотя бы один день проживания!");
-        return;
+
+function setupEmployeeAutocomplete(fieldObj, onSelect) {
+    const { wrapper, input } = fieldObj;
+    wrapper.style.position = "relative";
+
+    const dropdown = document.createElement("div");
+    dropdown.style.position = "absolute";
+    dropdown.style.top = "100%";
+    dropdown.style.left = "0";
+    dropdown.style.right = "0";
+    dropdown.style.zIndex = "1000";
+    dropdown.style.background = "#fff";
+    dropdown.style.border = "1px solid #ccc";
+    dropdown.style.borderRadius = "4px";
+    dropdown.style.maxHeight = "180px";
+    dropdown.style.overflowY = "auto";
+    dropdown.style.display = "none";
+    dropdown.style.boxShadow = "0 2px 6px rgba(0,0,0,0.15)";
+    wrapper.appendChild(dropdown);
+
+    let debounceTimer = null;
+    function hideDropdown() {
+        dropdown.style.display = "none";
+        dropdown.innerHTML = "";
     }
-    let minDay = Math.min(...filled.map(f => f.day));
-    let maxDay = Math.max(...filled.map(f => f.day));
-    let expectedCount = maxDay - minDay + 1;
-    if (filled.length !== expectedCount) {
-        alert(`Ошибка: заполнены не все дни с ${minDay} по ${maxDay}. Должны быть заполнены все дни подряд одним заказчиком.`);
-        return;
-    }
-    const firstCustomer = filled[0].customerId;
-    for (let i = 1; i < filled.length; i++) {
-        if (filled[i].customerId !== firstCustomer) {
-            alert(`Ошибка: в интервале с ${minDay} по ${maxDay} присутствуют разные заказчики. Должен быть один заказчик.`);
+
+    input.addEventListener("input", () => {
+        const q = input.value.trim();
+        if (debounceTimer) clearTimeout(debounceTimer);
+        if (q.length < 2) {
+            hideDropdown();
             return;
         }
-    }
-    const check_in = `${year}-${String(month).padStart(2, "0")}-${String(minDay).padStart(2, "0")}`;
-    const check_out = `${year}-${String(month).padStart(2, "0")}-${String(maxDay).padStart(2, "0")}`;
-    const data = {
-        field: field,
-        customer: customer,
-        full_name: full_name,
-        position: getValue("position") || "",
-        gender: getValue("gender") || "",
-        shift: getValue("shift") || "",
-        room_number: getValue("room_number") || "—",
-        room_unique_id: room_unique_id,
-        location: getValue("location") || "Общежитие",
-        path: getValue("path") || "",
-        check_in: check_in,
-        check_out: check_out,
-    };
+        debounceTimer = setTimeout(async () => {
+            try {
+                const resp = await apiFetch(`/api/employees/search?q=${encodeURIComponent(q)}`);
+                if (!resp || !resp.ok) {
+                    hideDropdown();
+                    return;
+                }
+                const employees = await resp.json();
+                if (!employees || employees.length === 0) {
+                    hideDropdown();
+                    return;
+                }
+                dropdown.innerHTML = "";
+                employees.forEach(emp => {
+                    const item = document.createElement("div");
+                    item.textContent = emp.full_name;
+                    item.style.padding = "6px 10px";
+                    item.style.cursor = "pointer";
+                    item.addEventListener("mouseenter", () => item.style.background = "#f0f9ff");
+                    item.addEventListener("mouseleave", () => item.style.background = "#fff");
+                    item.addEventListener("mousedown", (e) => {
+                        e.preventDefault();
+                        input.value = emp.full_name;
+                        hideDropdown();
+                        if (typeof onSelect === "function") {
+                            onSelect(emp);
+                        }
+                    });
+                    dropdown.appendChild(item);
+                });
+                dropdown.style.display = "block";
+            } catch (err) {
+                console.error("Ошибка поиска сотрудников:", err);
+                hideDropdown();
+            }
+        }, 250);
+    });
+
+    input.addEventListener("blur", () => {
+        setTimeout(hideDropdown, 150);
+    });
+}
+
+function makeFormInput(label, field, type) {
+    const wrapper = document.createElement("div");
+    wrapper.style.display = "flex";
+    wrapper.style.flexDirection = "column";
+    wrapper.style.gap = "4px";
+    const lbl = document.createElement("label");
+    lbl.textContent = label;
+    lbl.style.fontSize = "12px";
+    lbl.style.fontWeight = "600";
+    const input = document.createElement("input");
+    input.type = type;
+    input.dataset.field = field;
+    input.className = "edit-input";
+    input.style.padding = "4px 8px";
+    wrapper.appendChild(lbl);
+    wrapper.appendChild(input);
+    return { wrapper, input };
+}
+
+function makeFormSelect(label, field, options) {
+    const wrapper = document.createElement("div");
+    wrapper.style.display = "flex";
+    wrapper.style.flexDirection = "column";
+    wrapper.style.gap = "4px";
+    const lbl = document.createElement("label");
+    lbl.textContent = label;
+    lbl.style.fontSize = "12px";
+    lbl.style.fontWeight = "600";
+    const select = document.createElement("select");
+    select.dataset.field = field;
+    select.className = "edit-select";
+    options.forEach(opt => {
+        const o = document.createElement("option");
+        o.value = opt;
+        o.textContent = opt || "—";
+        select.appendChild(o);
+    });
+    wrapper.appendChild(lbl);
+    wrapper.appendChild(select);
+    return { wrapper, select };
+}
+
+function makeFormSelectFromList(label, field, list, nameKey) {
+    const wrapper = document.createElement("div");
+    wrapper.style.display = "flex";
+    wrapper.style.flexDirection = "column";
+    wrapper.style.gap = "4px";
+    const lbl = document.createElement("label");
+    lbl.textContent = label;
+    lbl.style.fontSize = "12px";
+    lbl.style.fontWeight = "600";
+    const select = document.createElement("select");
+    select.dataset.field = field;
+    select.className = "edit-select";
+    select.innerHTML = `<option value="">— выберите —</option>` +
+        list.map(item => `<option value="${item[nameKey]}">${item[nameKey]}</option>`).join("");
+    wrapper.appendChild(lbl);
+    wrapper.appendChild(select);
+    return { wrapper, select };
+}
+
+function makeFormSelectFromListId(label, field, list) {
+    const wrapper = document.createElement("div");
+    wrapper.style.display = "flex";
+    wrapper.style.flexDirection = "column";
+    wrapper.style.gap = "4px";
+    const lbl = document.createElement("label");
+    lbl.textContent = label;
+    lbl.style.fontSize = "12px";
+    lbl.style.fontWeight = "600";
+    const select = document.createElement("select");
+    select.dataset.field = field;
+    select.className = "edit-select";
+    select.innerHTML = `<option value="">— выберите —</option>` +
+        list.map(f => `<option value="${f.id}">${f.name}</option>`).join("");
+    wrapper.appendChild(lbl);
+    wrapper.appendChild(select);
+    return { wrapper, select };
+}
+
+async function saveNewResidentRow(data) {
+    if (!data.full_name) { alert("Введите ФИО!"); return; }
+    if (!data.customer_name) { alert("Выберите заказчика!"); return; }
+    if (isNaN(data.field_id) || data.field_id <= 0) { alert("Выберите месторождение из списка!"); return; }
+    if (!data.check_in || !data.check_out) { alert("Укажите даты!"); return; }
+    if (data.check_in > data.check_out) { alert("Дата заезда не может быть позже даты выезда!"); return; }
+    if (!data.add_in_official && !data.eol_fio) { alert("Для гостя укажите ФИО ответственного лица (eol_fio)"); return; }
+    if (isNaN(data.room_id) || data.room_id <= 0) { alert("Выберите комнату из списка свободных мест! Нажмите «Найти места», если список пуст."); return; }
+
     try {
         const response = await apiFetch("/api/add_resident", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(data)
         });
+        if (!response) return;
         const result = await response.json();
         if (!response.ok) {
-            alert(result.detail || result.error || "Ошибка");
+            alert(result.detail || result.error || "Ошибка при сохранении");
             return;
         }
-        const residentId = result.resident_id;
-        for (const sel of daySelects) {
-            if (sel.value) {
-                await apiFetch("/api/update_day", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        resident_id: residentId,
-                        day: parseInt(sel.dataset.day),
-                        month: month,
-                        year: year,
-                        customer_id: parseInt(sel.value)
-                    })
-                });
-            }
-        }
-        alert("Запись добавлена!");
+        const newRow = document.getElementById("new-resident-row");
+        if (newRow) newRow.remove();
+        alert("✅ Запись добавлена!");
         loadCalendar(true);
     } catch (err) {
         alert("Ошибка: " + err.message);
     }
 }
-// ===== ЗАГРУЗКА EXCEL =====
+
+// ========== ЗАГРУЗКА EXCEL ==========
 async function uploadExcel() {
     const fileInput = document.getElementById("excelFile");
     if (!fileInput) { alert("Элемент выбора файла не найден!"); return; }
@@ -668,25 +864,32 @@ async function uploadExcel() {
     formData.append("file", file);
     try {
         const response = await apiFetch("/api/upload_excel", { method: "POST", body: formData });
+        if (!response) return;
         const result = await response.json();
-        if (response.ok && result.message) {
-            alert("✅ " + result.message);
+        if (response.ok) {
+            // Новый ответ содержит message, approved_formal, approved_guest, rejected_no_room, rows_skipped, errors
+            let msg = result.message || "Импорт выполнен";
+            if (result.errors && result.errors.length > 0) {
+                msg += "\n\nОшибки:\n" + result.errors.slice(0, 5).join("\n");
+                if (result.errors.length > 5) msg += `\n... и ещё ${result.errors.length - 5}`;
+            }
+            alert("✅ " + msg);
             fileInput.value = "";
             loadCalendar(true);
-        } else if (result.error) {
-            alert("❌ Ошибка: " + result.error);
         } else {
-            alert("⚠️ Неизвестный ответ от сервера");
+            alert("❌ Ошибка: " + (result.error || result.detail || "Неизвестная ошибка"));
         }
     } catch (err) {
         console.error("Ошибка загрузки:", err);
         alert("Ошибка загрузки: " + err.message);
     }
 }
-// ===== ОТЧЁТ ПО ПЕРЕРАБОТКАМ =====
+
+// ========== ОТЧЁТ ПО ПЕРЕРАБОТКАМ ==========
 async function loadOvertimeFields() {
     try {
         const response = await apiFetch("/api/fields");
+        if (!response) return;
         const data = await response.json();
         const select = document.getElementById("overtimeFieldFilter");
         if (!select) return;
@@ -703,79 +906,174 @@ async function loadOvertimeFields() {
         console.error("Ошибка загрузки месторождений для overtime:", err);
     }
 }
+
 function toggleMainView(showOvertime) {
     const defaultSections = document.getElementById("defaultSections");
     const overtimeContainer = document.getElementById("overtimeContainer");
     if (showOvertime) {
-        defaultSections.style.display = "none";
-        overtimeContainer.style.display = "block";
+        if (defaultSections) defaultSections.style.display = "none";
+        if (overtimeContainer) overtimeContainer.style.display = "block";
         loadOvertimeFields();
         const now = new Date();
-        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
-        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0,10);
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
         const startInput = document.getElementById("overtimeStartDate");
         const endInput = document.getElementById("overtimeEndDate");
         if (startInput && !startInput.value) startInput.value = firstDay;
         if (endInput && !endInput.value) endInput.value = lastDay;
     } else {
-        defaultSections.style.display = "block";
-        overtimeContainer.style.display = "none";
+        if (defaultSections) defaultSections.style.display = "block";
+        if (overtimeContainer) overtimeContainer.style.display = "none";
     }
 }
-function downloadOvertimeReport() {
+
+async function downloadOvertimeReport() {
     const startDate = document.getElementById("overtimeStartDate").value;
     const endDate = document.getElementById("overtimeEndDate").value;
-    if (!startDate || !endDate) {
-        alert("Выберите обе даты!");
-        return;
-    }
+    if (!startDate || !endDate) { alert("Выберите обе даты!"); return; }
+    if (startDate > endDate) { alert("Дата начала не может быть позже даты конца!"); return; }
     const normDays = document.getElementById("normDays").value || 15;
     const fieldName = document.getElementById("overtimeFieldFilter").value;
-    let url = `/api/get_overtime_report?date_from=${startDate}&date_to=${endDate}&norm_days=${normDays}`;
-    if (fieldName) url += `&field_name=${encodeURIComponent(fieldName)}`;
-    window.open(url, '_blank');
-}
-// ===== ОБРАБОТЧИКИ =====
-document.addEventListener("change", async (e) => {
-    if (e.target.classList.contains("day-select")) await saveDay(e.target);
-});
-document.addEventListener("DOMContentLoaded", async function () {
-    if (!getToken()) { window.location.href = "/login"; return; }
-    await loadFields();
-    await loadCustomers();
-    const now = new Date();
-    const monthEl = document.getElementById("monthFilter");
-    const yearEl = document.getElementById("yearFilter");
-    if (monthEl) monthEl.value = now.getMonth() + 1;
-    if (yearEl) yearEl.value = now.getFullYear();
-    const addBtn = document.getElementById("addResidentBtn");
-    if (addBtn) addBtn.addEventListener("click", addNewRow);
-    initDragFill();
-    await loadCalendar(true);
-    await loadOvertimeFields();
-    const mainLink = document.getElementById("mainMenuLink");
-    const overtimeLink = document.getElementById("overtimeReportLink");
-    const generateBtn = document.getElementById("generateOvertimeBtn");
-    const backBtn = document.getElementById("backToMainBtn");
-    if (mainLink) mainLink.addEventListener("click", () => toggleMainView(false));
-    if (overtimeLink) overtimeLink.addEventListener("click", () => toggleMainView(true));
-    if (generateBtn) generateBtn.addEventListener("click", downloadOvertimeReport);
-    if (backBtn) backBtn.addEventListener("click", () => toggleMainView(false));
 
-    // ===== ПЕРЕКЛЮЧАТЕЛЬ ТЕМЫ (безопасная инициализация) =====
+    let url = `/api/get_overtime_report?check_in=${startDate}&check_out=${endDate}&norm_days=${normDays}`;
+    if (fieldName) url += `&field_name=${encodeURIComponent(fieldName)}`;
+
+    try {
+        const response = await apiFetch(url);
+        if (!response) return;
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            alert(err.detail || "Ошибка формирования отчёта");
+            return;
+        }
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = `overtime_${startDate}_${endDate}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+        console.error(err);
+        alert("Не удалось скачать отчёт по переработкам");
+    }
+}
+
+// ========== ИНИЦИАЛИЗАЦИЯ ==========
+document.addEventListener("DOMContentLoaded", async function () {
+    if (window.location.pathname === '/login' || window.location.pathname === '/register') {
+        return;
+    }
+    if (!getToken()) {
+        window.location.href = "/login";
+        return;
+    }
+    try {
+        const userRes = await apiFetch("/api/current_user");
+        if (!userRes) return;
+        const currentUser = await userRes.json();
+        const isAdmin = currentUser.role === "admin";
+
+        if (!isAdmin) {
+            const adminSelectors = [
+                '.cards', '.report-section', '#editModeBtn', '#addResidentBtn', '#excelFile',
+                'button[onclick="uploadExcel()"]', 'a[href="/admin_management"]', 'a[href="/moderate_requests"]',
+                '#overtimeReportLink', '.table-section'
+            ];
+            adminSelectors.forEach(sel => {
+                const el = document.querySelector(sel);
+                if (el) el.style.display = 'none';
+            });
+            document.querySelectorAll('.sidebar li').forEach(li => {
+                const link = li.querySelector('a');
+                if (link) {
+                    const href = link.getAttribute('href');
+                    if (href && !['/home', '/request_form', '/my_requests', '/logout'].includes(href)) {
+                        li.style.display = 'none';
+                    }
+                } else if (li.id && !['mainMenuLink', 'themeToggleBtn'].includes(li.id)) {
+                    li.style.display = 'none';
+                }
+            });
+            return;
+        }
+
+        // ========== АДМИНИСТРАТОР (внутри try) ==========
+        await loadFields();
+        await loadCustomers();
+
+        const now = new Date();
+        const monthEl = document.getElementById("monthFilter");
+        const yearEl = document.getElementById("yearFilter");
+        if (monthEl) monthEl.value = now.getMonth() + 1;
+        if (yearEl) yearEl.value = now.getFullYear();
+
+        if (fieldsList.length > 0 && document.getElementById("fieldFilter")) {
+            const firstFieldId = fieldsList[0].id;
+            document.getElementById("fieldFilter").value = firstFieldId;
+        }
+
+        const addBtn = document.getElementById("addResidentBtn");
+        if (addBtn) addBtn.addEventListener("click", addNewRow);
+
+        await loadCalendar(true);
+        await loadOvertimeFields();
+
+        const mainLink = document.getElementById("mainMenuLink");
+        const overtimeLink = document.getElementById("overtimeReportLink");
+        const generateBtn = document.getElementById("generateOvertimeBtn");
+        const backBtn = document.getElementById("backToMainBtn");
+        if (mainLink) mainLink.addEventListener("click", () => toggleMainView(false));
+        if (overtimeLink) overtimeLink.addEventListener("click", () => toggleMainView(true));
+        if (generateBtn) generateBtn.addEventListener("click", downloadOvertimeReport);
+        if (backBtn) backBtn.addEventListener("click", () => toggleMainView(false));
+
+        // Статистика с выбором периода
+        const nowStats = new Date();
+        const firstDayStats = new Date(nowStats.getFullYear(), nowStats.getMonth(), 1).toISOString().slice(0,10);
+        const lastDayStats = new Date(nowStats.getFullYear(), nowStats.getMonth() + 1, 0).toISOString().slice(0,10);
+        const statsFrom = document.getElementById("statsDateFrom");
+        const statsTo = document.getElementById("statsDateTo");
+        if (statsFrom && !statsFrom.value) statsFrom.value = firstDayStats;
+        if (statsTo && !statsTo.value) statsTo.value = lastDayStats;
+
+        const updateStatsBtn = document.getElementById("updateStatsBtn");
+        if (updateStatsBtn) {
+            updateStatsBtn.addEventListener("click", () => loadStats());
+        }
+
+        const fieldFilter = document.getElementById("fieldFilter");
+        if (fieldFilter) {
+            fieldFilter.addEventListener("change", () => loadStats());
+        }
+
+        const monthFilter = document.getElementById("monthFilter");
+        const yearFilterSelect = document.getElementById("yearFilter");
+        const fieldFilterForTable = document.getElementById("fieldFilter");
+        if (monthFilter) monthFilter.addEventListener("change", () => loadCalendar(true));
+        if (yearFilterSelect) yearFilterSelect.addEventListener("change", () => loadCalendar(true));
+        if (fieldFilterForTable) fieldFilterForTable.addEventListener("change", () => loadCalendar(true));
+
+    } catch (err) {
+        console.warn("Ошибка инициализации:", err);
+    }
+
+    // Переключатель темы (вне try, но может быть и внутри – без разницы)
     const themeToggleBtn = document.getElementById("themeToggleBtn");
     if (themeToggleBtn) {
         if (localStorage.getItem("theme") === "dark") {
             document.body.classList.add("dark-theme");
-            themeToggleBtn.textContent = "Светлая тема";
+            themeToggleBtn.textContent = "☀️ Светлая тема";
         } else {
-            themeToggleBtn.textContent = "Тёмная тема";
+            themeToggleBtn.textContent = "🌙 Тёмная тема";
         }
         themeToggleBtn.addEventListener("click", () => {
             document.body.classList.toggle("dark-theme");
             const isDark = document.body.classList.contains("dark-theme");
             localStorage.setItem("theme", isDark ? "dark" : "light");
-            themeToggleBtn.textContent = isDark ? "Светлая тема" : "Тёмная тема";
+            themeToggleBtn.textContent = isDark ? "☀️ Светлая тема" : "🌙 Тёмная тема";
         });
     }
 });

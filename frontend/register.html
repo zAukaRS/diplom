@@ -2,10 +2,10 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Вход в систему</title>
+    <title>Регистрация</title>
     <link rel="stylesheet" href="css/login.css">
     <style>
-        .login-container {
+        .register-container {
             max-width: 400px;
             margin: 50px auto;
             padding: 20px;
@@ -13,14 +13,14 @@
             border-radius: 8px;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
         }
-        .login-container h1 {
+        .register-container h1 {
             text-align: center;
         }
-        .login-container label {
+        .register-container label {
             display: block;
             margin-top: 10px;
         }
-        .login-container input {
+        .register-container input {
             width: 100%;
             padding: 8px;
             margin-top: 5px;
@@ -44,30 +44,37 @@
             margin-top: 10px;
             text-align: center;
         }
-        .register-link {
+        .success {
+            color: green;
+            text-align: center;
+        }
+        .login-link {
             text-align: center;
             margin-top: 15px;
         }
     </style>
 </head>
 <body>
-<div class="login-container">
-    <h1>Вход в систему</h1>
-    <form id="loginForm">
-        <label>Логин:</label>
+<div class="register-container">
+    <h1>Регистрация нового сотрудника</h1>
+    <form id="registerForm">
+        <label>Логин (имя пользователя):</label>
         <input type="text" name="username" required autocomplete="username">
 
         <label>Пароль:</label>
-        <input type="password" name="password" required autocomplete="current-password">
+        <input type="password" name="password" required autocomplete="new-password">
 
-        <button type="submit">Войти</button>
+        <label>Подтверждение пароля:</label>
+        <input type="password" name="confirm_password" required>
+
+        <button type="submit">Зарегистрироваться</button>
     </form>
-    <p id="errorMessage" class="error"></p>
-    <div class="register-link">
-        <a href="/register">Нет аккаунта? Зарегистрироваться</a>
+    <p id="message" class="error"></p>
+    <div class="login-link">
+        <a href="/login">Уже есть аккаунт? Войти</a>
     </div>
 </div>
 
-<script src="js/login.js"></script>
+<script src="js/register.js"></script>
 </body>
 </html>

@@ -19,7 +19,9 @@ templates = Jinja2Templates(directory=FRONTEND_DIR)
 @router.get("/login", response_class=HTMLResponse)
 async def login_page():
     return HTMLResponse((FRONTEND_DIR / "login.html").read_text(encoding="utf-8"))
-
+@router.get("/register", response_class=HTMLResponse)
+async def register_page():
+    return HTMLResponse((FRONTEND_DIR / "register.html").read_text(encoding="utf-8"))
 @router.get("/home", response_class=HTMLResponse)
 def home():
     return HTMLResponse((FRONTEND_DIR / "index.html").read_text(encoding="utf-8"))
