@@ -4,52 +4,48 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Импорт комнат</title>
+  <link rel="stylesheet" href="/css/style.css" />
   <style>
-    /* ===== Базовые стили ===== */
-    #import-panel {
-      max-width: 600px;
-      margin: 2rem auto;
-      background: #f8f9fa;
-      border-radius: 16px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.1);
-      padding: 24px 28px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    /* Дополнительные стили для страницы импорта */
+    .import-container {
+      max-width: 700px;
+      margin: 40px auto;
+      background: #fff;
+      padding: 30px 35px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
     }
-    #import-panel h2 {
+    .import-container h2 {
       margin-top: 0;
-      font-weight: 600;
-      font-size: 1.6rem;
+      font-size: 1.8rem;
       color: #1e293b;
       border-bottom: 2px solid #e9ecef;
       padding-bottom: 12px;
     }
-    #import-panel label {
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .form-group label {
       display: block;
-      font-weight: 500;
+      font-weight: 600;
       margin-bottom: 4px;
       color: #334155;
     }
-    #import-panel select,
-    #import-panel input[type="file"] {
+    .form-group select,
+    .form-group input[type="file"] {
       width: 100%;
       padding: 8px 12px;
       border: 1px solid #ced4da;
       border-radius: 6px;
       font-size: 0.95rem;
       background: white;
-      transition: border-color 0.2s;
-    }
-    #import-panel select:focus,
-    #import-panel input[type="file"]:focus {
-      border-color: #6366f1;
-      outline: none;
     }
     .status-box {
-      margin: 16px 0;
       padding: 12px 16px;
       border-radius: 8px;
-      background: #fff;
+      background: #f8f9fa;
       border-left: 4px solid #94a3b8;
+      margin: 16px 0;
       font-size: 0.95rem;
     }
     .status-box.ok {
@@ -65,14 +61,14 @@
       background: #fffbeb;
     }
     .upload-area {
-      margin: 16px 0;
-      padding: 24px;
       border: 2px dashed #cbd5e1;
       border-radius: 12px;
+      padding: 30px 20px;
       text-align: center;
       background: #f1f5f9;
-      transition: background 0.2s, border-color 0.2s;
       cursor: pointer;
+      transition: 0.2s;
+      margin: 16px 0;
     }
     .upload-area.dragover {
       background: #e2e8f0;
@@ -90,43 +86,34 @@
       display: none;
     }
     .btn {
-      display: inline-block;
       padding: 10px 24px;
       border: none;
       border-radius: 8px;
       font-weight: 600;
       font-size: 1rem;
       cursor: pointer;
-      transition: background 0.2s, transform 0.1s;
       background: #6366f1;
       color: white;
+      transition: 0.2s;
     }
-    .btn:hover {
-      background: #4f46e5;
-    }
-    .btn:active {
-      transform: scale(0.97);
-    }
+    .btn:hover { background: #4f46e5; }
     .btn:disabled {
       opacity: 0.5;
       cursor: not-allowed;
-      transform: none;
     }
-    .result-area {
-      margin-top: 16px;
+    .result-box {
+      margin-top: 20px;
       padding: 12px;
-      background: #fff;
+      background: #f8f9fa;
       border-radius: 8px;
       border: 1px solid #e9ecef;
       max-height: 300px;
       overflow-y: auto;
-      white-space: pre-wrap;
       font-size: 0.9rem;
       line-height: 1.5;
+      white-space: pre-wrap;
     }
-    .result-area .error-item {
-      color: #b91c1c;
-    }
+    .result-box .error-item { color: #b91c1c; }
     .spinner {
       display: inline-block;
       width: 20px;
@@ -138,11 +125,9 @@
       vertical-align: middle;
       margin-right: 8px;
     }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-    .footer {
-      margin-top: 20px;
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .footer-note {
+      margin-top: 24px;
       font-size: 0.8rem;
       color: #94a3b8;
       text-align: center;
@@ -152,75 +137,90 @@
   </style>
 </head>
 <body>
-<div id="import-panel">
-  <h2>📥 Импорт комнат</h2>
 
-  <!-- Выбор месторождения -->
-  <div>
-    <label for="field-select">Месторождение</label>
-    <select id="field-select">
-      <option value="">— Загрузка … —</option>
-    </select>
-  </div>
+<div class="container">
+  <!-- Подключаем стандартную админ-панель (боковое меню) -->
+  <aside class="sidebar">
+    <h2>Админ-панель</h2>
+    <ul>
+      <li><a href="/home">🏠 Главная</a></li>
+      <li><a href="/import_rooms" style="font-weight: bold; color: #2563eb;">📥 Импорт комнат</a></li>
+      <li><a href="/request_form">📝 Новая заявка</a></li>
+      <li><a href="/my_requests">📋 Мои заявки</a></li>
+      <li id="overtimeReportLink" style="cursor:pointer;">📊 Отчёт по переработкам</li>
+      <li><a href="/admin_management">👤 Управление админами</a></li>
+      <li><a href="/moderate_requests">📋 Модерация заявок</a></li>
+      <li id="themeToggleBtn" style="cursor:pointer;">🌓 Тёмная тема</li>
+      <li><a href="#" onclick="logout(); return false;">🚪 Выход</a></li>
+    </ul>
+  </aside>
 
-  <!-- Статус -->
-  <div id="status-container">
-    <div class="status-box" id="status-message">
-      Выберите месторождение, чтобы проверить наличие комнат.
+  <div class="main-content">
+    <div class="import-container">
+      <h2>📥 Импорт комнат из Excel</h2>
+
+      <!-- Выбор месторождения -->
+      <div class="form-group">
+        <label for="fieldSelect">Месторождение</label>
+        <select id="fieldSelect">
+          <option value="">— Загрузка … —</option>
+        </select>
+      </div>
+
+      <!-- Статус -->
+      <div id="statusBox" class="status-box">Выберите месторождение, чтобы проверить наличие комнат.</div>
+
+      <!-- Зона загрузки файла (скрыта, пока комнат нет) -->
+      <div id="uploadSection" style="display:none;">
+        <div class="upload-area" id="dropArea">
+          <p>📂 Перетащите Excel-файл сюда</p>
+          <p class="hint">или кликните, чтобы выбрать</p>
+          <input type="file" id="fileInput" accept=".xlsx,.xls" />
+        </div>
+        <button class="btn" id="importBtn" disabled>Импортировать</button>
+      </div>
+
+      <!-- Результат -->
+      <div id="resultBox" class="result-box" style="display:none;"></div>
+
+      <div class="footer-note">
+        Парсер: simple_room_importer.py &bull; поддерживаются форматы A и B
+      </div>
     </div>
-  </div>
-
-  <!-- Область загрузки -->
-  <div id="upload-section" style="display: none;">
-    <div class="upload-area" id="drop-area">
-      <p>📂 Перетащите Excel-файл сюда</p>
-      <p class="hint">или кликните, чтобы выбрать</p>
-      <input type="file" id="file-input" accept=".xlsx,.xls" />
-    </div>
-    <button class="btn" id="import-btn" disabled>Импортировать</button>
-  </div>
-
-  <!-- Результат -->
-  <div id="result-area" class="result-area" style="display: none;"></div>
-
-  <div class="footer">
-    Парсер: simple_room_importer.py &bull; версия 1.0
   </div>
 </div>
 
+<!-- Подключаем общий app.js для apiFetch, logout, темы -->
+<script src="/js/app.js"></script>
+
+<!-- Специфичный скрипт для страницы импорта -->
 <script>
   (function() {
     'use strict';
 
-    // ===== Эндпоинты (относительные) =====
-    const ENDPOINTS = {
-      fields: '/api/fields',
-      rooms:  '/api/rooms/check',
-      import: '/api/rooms/import',
-    };
+    // DOM-элементы
+    const fieldSelect = document.getElementById('fieldSelect');
+    const statusBox = document.getElementById('statusBox');
+    const uploadSection = document.getElementById('uploadSection');
+    const fileInput = document.getElementById('fileInput');
+    const dropArea = document.getElementById('dropArea');
+    const importBtn = document.getElementById('importBtn');
+    const resultBox = document.getElementById('resultBox');
 
-    // ===== DOM =====
-    const fieldSelect = document.getElementById('field-select');
-    const statusMessage = document.getElementById('status-message');
-    const uploadSection = document.getElementById('upload-section');
-    const fileInput = document.getElementById('file-input');
-    const dropArea = document.getElementById('drop-area');
-    const importBtn = document.getElementById('import-btn');
-    const resultArea = document.getElementById('result-area');
-
+    // Вспомогательные функции
     function setStatus(text, type = '') {
-      statusMessage.textContent = text;
-      statusMessage.className = 'status-box' + (type ? ' ' + type : '');
+      statusBox.textContent = text;
+      statusBox.className = 'status-box' + (type ? ' ' + type : '');
     }
 
     function showResult(html) {
-      resultArea.style.display = 'block';
-      resultArea.innerHTML = html;
+      resultBox.style.display = 'block';
+      resultBox.innerHTML = html;
     }
 
     function clearResult() {
-      resultArea.style.display = 'none';
-      resultArea.innerHTML = '';
+      resultBox.style.display = 'none';
+      resultBox.innerHTML = '';
     }
 
     function setLoading(loading) {
@@ -233,11 +233,11 @@
       }
     }
 
-    // ===== Загрузка полей =====
+    // Загрузка списка полей (используем apiFetch из app.js)
     async function loadFields() {
       try {
-        const resp = await fetch(ENDPOINTS.fields);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const resp = await apiFetch('/api/fields');
+        if (!resp) return;
         const fields = await resp.json();
         fieldSelect.innerHTML = '<option value="">— Выберите месторождение —</option>';
         fields.forEach(f => {
@@ -246,6 +246,7 @@
           opt.textContent = f.name || `Поле #${f.id}`;
           fieldSelect.appendChild(opt);
         });
+        // Восстановить выбранное поле (если сохраняли)
         const saved = sessionStorage.getItem('selectedFieldId');
         if (saved && fields.some(f => String(f.id) === saved)) {
           fieldSelect.value = saved;
@@ -262,7 +263,7 @@
       }
     }
 
-    // ===== Проверка комнат =====
+    // Проверка наличия комнат для выбранного поля
     async function checkRooms(fieldId) {
       if (!fieldId) {
         setStatus('Выберите месторождение.', '');
@@ -270,11 +271,11 @@
         clearResult();
         return;
       }
+
       try {
-        const url = new URL(ENDPOINTS.rooms, window.location.origin);
-        url.searchParams.set('field_id', fieldId);
-        const resp = await fetch(url);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const url = `/api/rooms/check?field_id=${fieldId}`;
+        const resp = await apiFetch(url);
+        if (!resp) return;
         const data = await resp.json();
         const count = data.count || 0;
 
@@ -286,6 +287,7 @@
           setStatus(`✅ Комнат нет. Можно импортировать данные из Excel.`, 'ok');
           uploadSection.style.display = 'block';
           clearResult();
+          // Сброс выбранного файла
           fileInput.value = '';
           importBtn.disabled = true;
         }
@@ -309,7 +311,7 @@
       }
     }
 
-    // ===== Импорт =====
+    // Импорт
     async function importRooms(fieldId, file) {
       if (!fieldId) {
         setStatus('❌ Сначала выберите месторождение.', 'error');
@@ -334,10 +336,12 @@
       formData.append('field_id', fieldId);
 
       try {
-        const resp = await fetch(ENDPOINTS.import, {
+        const resp = await apiFetch('/api/rooms/import', {
           method: 'POST',
           body: formData,
         });
+
+        if (!resp) return;
 
         if (!resp.ok) {
           let errorText = `HTTP ${resp.status}`;
@@ -365,7 +369,7 @@
         showResult(html);
 
         setStatus(`✅ Импортировано ${result.rooms || 0} комнат.`, 'ok');
-        uploadSection.style.display = 'none';
+        uploadSection.style.display = 'none'; // скрыть форму, т.к. комнаты уже есть
 
       } catch (err) {
         console.error('Ошибка импорта:', err);
@@ -378,7 +382,7 @@
       }
     }
 
-    // ===== Обработчики =====
+    // ===== Обработчики событий =====
     fieldSelect.addEventListener('change', onFieldChange);
 
     fileInput.addEventListener('change', function() {
@@ -421,8 +425,34 @@
       importRooms(fieldId, file);
     });
 
-    // ===== Старт =====
+    // ===== Инициализация =====
     loadFields();
+
+    // Подключаем обработку переключения темы (она уже есть в app.js, но дублируем для надёжности)
+    const themeToggleBtn = document.getElementById('themeToggleBtn');
+    if (themeToggleBtn) {
+      if (localStorage.getItem('theme') === 'dark') {
+        document.body.classList.add('dark-theme');
+        themeToggleBtn.textContent = '☀️ Светлая тема';
+      }
+      themeToggleBtn.addEventListener('click', function() {
+        document.body.classList.toggle('dark-theme');
+        const isDark = document.body.classList.contains('dark-theme');
+        localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        this.textContent = isDark ? '☀️ Светлая тема' : '🌙 Тёмная тема';
+      });
+    }
+
+    // Обработка пункта "Отчёт по переработкам" (перенаправляем на страницу с отчётом)
+    const overtimeLink = document.getElementById('overtimeReportLink');
+    if (overtimeLink) {
+      overtimeLink.addEventListener('click', function() {
+        // Если у вас есть отдельная страница, например, /overtime_report, то редиректим
+        // Пока просто переключаем view, но можно и на отдельную страницу
+        alert('Страница отчёта по переработкам пока не реализована в этом интерфейсе.\nИспользуйте главную страницу.');
+      });
+    }
+
   })();
 </script>
 </body>

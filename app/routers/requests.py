@@ -13,13 +13,16 @@ from pydantic import BaseModel
 class RequestCreate(BaseModel):
     customer: str
     contract_date: date
-    eol_fio: str
+    eol_fio: str          # ответственное лицо (может совпадать с full_name)
     position: str
     field_id: int
     check_in: date
     check_out: date
     room_id: int
     comment: Optional[str] = ""
+    contract_num: str
+    full_name: str        
+    gender: Optional[str] = None  
 
 
 # Получить свободные места с учётом вместимости комнат.
@@ -154,51 +157,97 @@ async def get_available(
 
 
 
-
 @router.post("/")
 async def create_request(
-    data : RequestCreate,
+    data: RequestCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    
-    #field
+    # 1. Проверка поля
     field = await db.get(Field, data.field_id)
     if not field:
         raise HTTPException(404, "Месторождение не найдено")
 
-    # Проверка существования комнаты и её принадлежности полю
+    # 2. Проверка комнаты и принадлежности полю
     room = await db.get(Room, data.room_id)
     if not room:
         raise HTTPException(404, "Комната не найдена")
+    if room.field_id != data.field_id:
+        raise HTTPException(400, "Room does not belong to the specified field")
 
-    # Проверяем даты
+    # 3. Проверка дат
     if data.check_in > data.check_out:
         raise HTTPException(400, "Дата заезда не может быть позже даты выезда")
 
+    # 4. Проверка свободных мест
+    available = await compute_available_rooms(db, data.field_id, data.check_in, data.check_out)
+    if not any(r["id"] == data.room_id for r in available):
+        # room_id может быть не в списке, если мест нет
+        # можно проверить точнее: есть ли комната с id == data.room_id и free_places > 0
+        room_available = False
+        for group in available:
+            if group["id"] == data.room_id or any(v["id"] == data.room_id for v in group.get("variants", [])):
+                # проверить, что в этом варианте есть свободные места
+                for variant in group.get("variants", []):
+                    if variant["id"] == data.room_id and variant["free_places"] > 0:
+                        room_available = True
+                        break
+                if not room_available:
+                    # если группа имеет свободные места, но не этот конкретный вариант,
+                    # можно разрешить или предложить другой вариант.
+                    # Пока просто ошибка.
+                    raise HTTPException(400, "В выбранной комнате нет свободных мест на указанный период")
+                break
+        if not room_available:
+            raise HTTPException(400, "В выбранной комнате нет свободных мест на указанный период")
+
+    # 5. Получение/создание заказчика
+    customer_stmt = select(Customer).where(Customer.name == data.customer)
+    customer = (await db.execute(customer_stmt)).scalars().first()
+    if not customer:
+        customer = Customer(name=data.customer)
+        db.add(customer)
+        await db.flush()
+
+    # 6. Получение/создание жильца (Resident)
+    resident_stmt = select(Resident).where(Resident.full_name == data.full_name)
+    resident = (await db.execute(resident_stmt)).scalars().first()
+    if not resident:
+        resident = Resident(
+            full_name=data.full_name,
+            position=data.position,
+            gender=data.gender,
+            birthday=None  # или можно передать из запроса
+        )
+        db.add(resident)
+        await db.flush()
+
+    # 7. Генерация номера договора
     contract_num = await generate_contract_number(db, field.name)
 
-    new_req = Request_before(
-        customer=data.customer,
+    # 8. Создание Request
+    new_request = Request(
+        customer_id=customer.id,
         contract_num=contract_num,
         contract_date=data.contract_date,
         eol_fio=data.eol_fio,
         user_id=current_user.id,
+        resident_id=resident.id,
         position=data.position,
         field_id=data.field_id,
         check_in=data.check_in,
         check_out=data.check_out,
-        days=(data.check_out-data.check_in).days + 1,
-        room_id=data.room_id,          # ← поле должно быть room_id, а не room
+        days=(data.check_out - data.check_in).days + 1,
+        room_id=data.room_id,
         comment=data.comment,
-        status="pending"
+        status="approved",    # сразу одобрена
+        admin_comment=None,
     )
-    db.add(new_req)
+    db.add(new_request)
     await db.commit()
-    await db.refresh(new_req)
+    await db.refresh(new_request)
 
-    return {"id": new_req.id, "status": new_req.status}
-
+    return {"id": new_request.id, "status": new_request.status}
 
 #просмотр заявок
 @router.get("/my")
@@ -221,12 +270,12 @@ async def get_my_requests(
             .order_by(Request.created_at.desc())
         )
     requests = result.scalars().all()
-    # Возвращаем список объектов (FastAPI сам сериализует)
+   
     return requests
 
 # Для админов модерация
 
-# ========== СХЕМА ДЛЯ ОБНОВЛЕНИЯ ЧЕРНОВИКА ==========
+# СХЕМА ДЛЯ ОБНОВЛЕНИЯ ЧЕРНОВИКА 
 class RequestBeforeUpdate(BaseModel):
     customer: Optional[str] = None
     contract_num: Optional[str] = None
@@ -239,10 +288,10 @@ class RequestBeforeUpdate(BaseModel):
     days: Optional[int] = None
     room_id: Optional[int] = None
     comment: Optional[str] = None
-    status: Optional[str] = None          # можно менять, например, на rejected
+    status: Optional[str] = None        
     admin_comment: Optional[str] = None
 
-# ========== РЕДАКТИРОВАНИЕ ЧЕРНОВИКА (PATCH) ==========
+
 @router.patch("/{request_id}")
 async def update_request_before(
     request_id: int,
@@ -251,7 +300,9 @@ async def update_request_before(
     current_user: User = Depends(get_current_user),
 ):
     """Обновление полей черновика заявки. Изменяются только переданные поля."""
-    # 1. Находим черновик
+        
+    if "status" in update_data.model_dump(exclude_unset=True):
+        raise HTTPException(403, "Изменение статуса через этот эндпоинт запрещено. Используйте /approve или /reject.")
     req = await db.get(Request_before, request_id)
     if not req:
         raise HTTPException(404, "Черновик не найден")
@@ -262,14 +313,15 @@ async def update_request_before(
     if not (is_admin or (is_field_admin and current_user.field_id == req.field_id)):
         raise HTTPException(403, "Нет прав на редактирование этой заявки")
 
-    # 3. Обновляем только те поля, которые были переданы
-    for field, value in update_data.dict(exclude_unset=True).items():
-        setattr(req, field, value)
 
-    # 4. Если заявка уже была одобрена ранее – запрещаем редактирование
+
+    
     if req.status == "approved":
         raise HTTPException(409, "Одобренную заявку нельзя редактировать. Создайте новую.")
 
+    
+    for field, value in update_data.model_dump(exclude_unset=True).items():
+        setattr(req, field, value)
     await db.commit()
     return {"message": "Черновик обновлён"}
 
@@ -341,8 +393,7 @@ async def approve_request(
     await db.commit()
     return {"message": "Заявка одобрена и перенесена в основную таблицу"}
 
-# ========== ДРУГИЕ НЕОБХОДИМЫЕ ЭНДПОИНТЫ ==========
-# 1. Получение списка черновиков для модерации (для field_admin / admin)
+
 @router.get("/pending")
 async def get_pending_requests(
     db: AsyncSession = Depends(get_db),
@@ -362,7 +413,7 @@ async def get_pending_requests(
     requests = result.scalars().all()
     return requests
 
-# 2. Получение черновика по ID (с проверкой прав)
+
 @router.get("/{request_id}")
 async def get_request_before(
     request_id: int,

@@ -46,3 +46,7 @@ def my_requests(request: Request):
 @router.get("/moderate_requests", response_class=HTMLResponse)
 def moderate_requests(request: Request):
     return templates.TemplateResponse("moderate_requests.html", {"request": request})
+
+@router.get("/import_rooms", response_class=HTMLResponse)
+async def import_rooms_page(request: Request):
+    return templates.TemplateResponse("import_rooms.html", {"request": request})

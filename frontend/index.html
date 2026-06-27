@@ -41,12 +41,10 @@
         <h2>Админ-панель</h2>
         <ul>
             <li id="mainMenuLink"><a href="/home">🏠 Главная</a></li>
+            <li><a href="/import_rooms">📥 Импорт комнат</a></li>
             <li><a href="/request_form">📝 Новая заявка</a></li>
             <li><a href="/my_requests">📋 Мои заявки</a></li>
             <li id="overtimeReportLink">📊 Отчёт по переработкам</li>
-            <li>📄 Отчёты</li>
-            <li>🛏 Комнаты</li>
-            <li>🏢 Общежития</li>
             <li><a href="/admin_management">👤 Управление админами</a></li>
             <li><a href="/moderate_requests">📋 Модерация заявок</a></li>
             <li id="themeToggleBtn" style="cursor: pointer;">🌓 Тёмная тема</li>
@@ -105,8 +103,8 @@
                         <option value="11">Ноя</option>
                         <option value="12">Дек</option>
                     </select>
-                    <button onclick="loadCalendar(true)" class="btn-compact">Показать</button>
-                    <button onclick="searchResidents()" class="btn-compact">🔍 Поиск</button>
+                    
+                    
                     <button onclick="clearSearch()" class="btn-compact">✖ Сброс</button>
                 </div>
 
@@ -142,6 +140,7 @@
                     <button id="generateOvertimeBtn" class="btn-compact">Сформировать отчёт (Excel)</button>
                     <button id="backToMainBtn" class="btn-compact" style="background-color: #6c757d;">← Назад</button>
                 </div>
+
             </section>
         </div>
 

@@ -8,7 +8,7 @@ from app.database import get_db
 from app.core.dependencies import get_current_user
 from app.models import User
 from app.request_import import import_requests_from_excel
-
+from fastapi import APIRouter, Depends, HTTPException
 logger = logging.getLogger("excel_upload")
 
 router = APIRouter()
@@ -19,6 +19,8 @@ async def upload_excel(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if current_user.role.name not in ("admin", "field_admin"): 
+        raise HTTPException(403)
     if not file.filename.endswith((".xlsx", ".xls")):
         logger.warning("UPLOAD_REJECTED: неверный формат файла '%s', user_id=%s", file.filename, current_user.id)
         return JSONResponse({"error": "Неверный формат файла"}, status_code=400)

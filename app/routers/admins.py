@@ -114,7 +114,7 @@ async def create_field(
     if not field_name:
         raise HTTPException(status_code=400, detail="Название обязательно")
     
-    # Проверка, существует ли уже
+
     existing = await db.execute(select(Field).where(Field.name == field_name))
     if existing.scalars().first():
         return {"id": existing.scalars().first().id, "name": field_name}
@@ -124,3 +124,125 @@ async def create_field(
     await db.commit()
     await db.refresh(new_field)
     return {"id": new_field.id, "name": new_field.name}
+
+
+
+
+
+from app.models import Request_before, Request, Resident, Customer
+from sqlalchemy.orm import selectinload
+
+@router.get("/api/requests/all")
+async def get_all_requests(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(admin_only)
+):
+    """
+    Возвращает все заявки из Request_before (pending/rejected/approved)
+    и Request (approved), отсортированные по дате создания (новые первые).
+    """
+
+    # ---- Request_before ------------------------------------------------
+    rb_res = await db.execute(
+        select(Request_before)
+        .options(selectinload(Request_before.field))
+        .order_by(Request_before.created_at.desc())
+        .limit(500)
+    )
+    rb_rows = rb_res.scalars().unique().all()
+
+    rb_list = []
+    for r in rb_rows:
+        rb_list.append({
+            "source": "request_before",
+            "id": r.id,
+            "status": r.status,
+            "user_id": r.user_id,
+            "field_id": r.field_id,
+            "field_name": r.field.name if r.field else "",
+            "check_in": str(r.check_in) if r.check_in else "",
+            "check_out": str(r.check_out) if r.check_out else "",
+            "room_id": r.room_id,
+            "customer": r.customer or "",
+            "contract_num": r.contract_num or "",
+            "contract_date": str(r.contract_date) if r.contract_date else "",
+            "eol_fio": r.eol_fio or "",
+            "position": r.position or "",
+            "full_name": r.full_name or "",
+            "comment": r.comment or "",
+            "admin_comment": r.admin_comment or "",
+            "created_at": str(r.created_at) if r.created_at else "",
+        })
+
+    # ---- Request (approved) --------------------------------------------
+    rq_res = await db.execute(
+        select(Request)
+        .options(
+            selectinload(Request.field),
+            selectinload(Request.customer),
+            selectinload(Request.resident),
+        )
+        .order_by(Request.created_at.desc())
+        .limit(500)
+    )
+    rq_rows = rq_res.scalars().unique().all()
+
+    rq_list = []
+    for r in rq_rows:
+        rq_list.append({
+            "source": "request",
+            "id": r.id,
+            "status": r.status,
+            "user_id": r.user_id,
+            "field_id": r.field_id,
+            "field_name": r.field.name if r.field else "",
+            "check_in": str(r.check_in) if r.check_in else "",
+            "check_out": str(r.check_out) if r.check_out else "",
+            "room_id": r.room_id,
+            "customer": r.customer.name if r.customer else "",
+            "contract_num": r.contract_num or "",
+            "contract_date": str(r.contract_date) if r.contract_date else "",
+            "eol_fio": r.eol_fio or "",
+            "position": r.position or "",
+            "full_name": r.resident.full_name if r.resident else "",
+            "comment": r.comment or "",
+            "admin_comment": r.admin_comment or "",
+            "created_at": str(r.created_at) if r.created_at else "",
+        })
+
+    # Объединяем и сортируем по created_at (строки ISO, лексикографически)
+    all_requests = rb_list + rq_list
+    all_requests.sort(key=lambda x: x["created_at"], reverse=True)
+
+    return all_requests
+
+
+@router.post("/api/requests/{request_id}/reject_admin")
+async def reject_request_admin(
+    request_id: int,
+    source: str = "request_before",   # query param: request_before | request
+    data: dict = Body(default={}),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(admin_only),
+):
+    """
+    Отклоняет заявку из любой таблицы (указывается через ?source=).
+    """
+    admin_comment = data.get("admin_comment", "")
+
+    if source == "request":
+        res = await db.execute(select(Request).where(Request.id == request_id))
+        req = res.scalars().first()
+    else:
+        res = await db.execute(select(Request_before).where(Request_before.id == request_id))
+        req = res.scalars().first()
+
+    if not req:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+
+    req.status = "rejected"
+    if admin_comment:
+        req.admin_comment = admin_comment
+
+    await db.commit()
+    return {"message": "Заявка отклонена"}

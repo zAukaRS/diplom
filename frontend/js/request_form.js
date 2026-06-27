@@ -8,6 +8,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // Загрузка списка месторождений
     const fieldsRes = await apiFetch("/api/fields");
+    if (!fieldsRes) {
+        alert("Не удалось загрузить список месторождений");
+        return;
+    }
     const fields = await fieldsRes.json();
     const fieldSelect = document.getElementById("fieldId");
     fields.forEach(f => {
@@ -23,16 +27,37 @@ document.addEventListener("DOMContentLoaded", async () => {
     const availableDiv = document.getElementById("availableRooms");
     const roomIdInput = document.getElementById("roomId");
 
-    // Функция загрузки свободных комнат (только для нового создания, не для редактирования)
+    // Функция загрузки свободных комнат
     async function loadAvailableRooms() {
         const field_id = fieldSelect.value;
         const check_in = checkIn.value;
         const check_out = checkOut.value;
-        if (!field_id || !check_in || !check_out) return;
+        if (!field_id || !check_in || !check_out) {
+            availableDiv.innerHTML = "";
+            roomIdInput.value = "";
+            return;
+        }
+
+        // Валидация дат (баг #10)
+        if (new Date(check_in) > new Date(check_out)) {
+            availableDiv.innerHTML = "<p style='color:red'>Дата заезда не может быть позже даты выезда</p>";
+            roomIdInput.value = "";
+            return;
+        }
 
         const url = `/api/requests/available?field_id=${field_id}&check_in=${check_in}&check_out=${check_out}`;
         const res = await apiFetch(url);
-        if (!res.ok) return;
+        if (!res) {
+            availableDiv.innerHTML = "<p style='color:red'>Ошибка соединения</p>";
+            roomIdInput.value = "";
+            return;
+        }
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            availableDiv.innerHTML = `<p style='color:red'>Ошибка: ${err.detail || "Неизвестная ошибка"}</p>`;
+            roomIdInput.value = "";
+            return;
+        }
         const rooms = await res.json();
         
         availableDiv.innerHTML = "";
@@ -59,17 +84,27 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Если это редактирование, загружаем данные черновика
     if (isEditMode) {
         const reqRes = await apiFetch(`/api/requests/${editId}`);
+        if (!reqRes) {
+            alert("Ошибка загрузки заявки");
+            return;
+        }
+        if (!reqRes.ok) {
+            alert("Заявка не найдена или нет доступа");
+            window.location.href = "/my_requests";
+            return;
+        }
         const reqData = await reqRes.json();
-        // Заполняем форму
-        fieldSelect.value = reqData.field_id;
-        checkIn.value = reqData.check_in;
-        checkOut.value = reqData.check_out;
-        document.getElementById("customer").value = reqData.customer;
-        document.getElementById("contractDate").value = reqData.contract_date;
-        document.getElementById("eolFio").value = reqData.eol_fio;
-        document.getElementById("position").value = reqData.position;
-        document.getElementById("comment").value = reqData.comment;
-        roomIdInput.value = reqData.room_id;
+        
+        // Заполняем форму (с защитой от undefined – баг #6)
+        fieldSelect.value = reqData.field_id || "";
+        checkIn.value = reqData.check_in || "";
+        checkOut.value = reqData.check_out || "";
+        document.getElementById("customer").value = reqData.customer || "";
+        document.getElementById("contractDate").value = reqData.contract_date || "";
+        document.getElementById("eolFio").value = reqData.eol_fio || "";
+        document.getElementById("position").value = reqData.position || "";
+        document.getElementById("comment").value = reqData.comment || "";
+        roomIdInput.value = reqData.room_id || "";
         // Загружаем комнаты, чтобы подсветить выбранную
         await loadAvailableRooms();
         // Выделяем кнопку с выбранной комнатой
@@ -109,6 +144,13 @@ document.addEventListener("DOMContentLoaded", async () => {
             return;
         }
 
+        // Дополнительная проверка дат
+        if (new Date(data.check_in) > new Date(data.check_out)) {
+            messageDiv.style.color = "red";
+            messageDiv.textContent = "Дата заезда не может быть позже даты выезда";
+            return;
+        }
+
         try {
             let res;
             if (isEditMode) {
@@ -126,6 +168,11 @@ document.addEventListener("DOMContentLoaded", async () => {
                     body: JSON.stringify(data)
                 });
             }
+            if (!res) {
+                messageDiv.style.color = "red";
+                messageDiv.textContent = "Ошибка соединения с сервером";
+                return;
+            }
             const result = await res.json();
             if (res.ok) {
                 messageDiv.style.color = "green";
@@ -135,9 +182,10 @@ document.addEventListener("DOMContentLoaded", async () => {
                 }, 1500);
             } else {
                 messageDiv.style.color = "red";
-                messageDiv.textContent = result.detail || "Ошибка при сохранении заявки";
+                messageDiv.textContent = result.detail || result.error || "Ошибка при сохранении заявки";
             }
         } catch (err) {
+            console.error(err);
             messageDiv.style.color = "red";
             messageDiv.textContent = "Ошибка сервера";
         }

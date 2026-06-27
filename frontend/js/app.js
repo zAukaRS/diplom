@@ -69,6 +69,24 @@ let currentYear = null;
 let currentFieldId = "";
 let currentWord = "";
 
+// ========== ДЛЯ ДЕБАНСА ПОИСКА ==========
+let searchTimeout = null;   // <--- НОВАЯ ПЕРЕМЕННАЯ
+
+// ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
+function escapeAttr(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ========== ФУНКЦИЯ ПРИМЕНЕНИЯ ФИЛЬТРОВ (С DEBOUNCE) ==========
+// <--- НОВАЯ ФУНКЦИЯ
+function applyFilters() {
+    if (searchTimeout) clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        loadCalendar(true);
+        searchTimeout = null;
+    }, 300);
+}
+
 // ========== ЗАГРУЗКА ДАННЫХ ==========
 async function loadCustomers() {
     try {
@@ -115,11 +133,14 @@ function generateCalendar() {
     head.innerHTML = row;
 }
 
+// Функция searchResidents больше не используется, но оставим для совместимости (можно удалить)
 function searchResidents() { loadCalendar(true); }
+
+// Изменённая clearSearch – теперь вызывает applyFilters()
 function clearSearch() {
     document.getElementById("searchWord").value = "";
     document.getElementById("fieldFilter").value = "";
-    loadCalendar(true);
+    applyFilters();   // <--- ЗАМЕНА loadCalendar(true)
 }
 
 // ========== СКАЧИВАНИЕ ОТЧЁТА ==========
@@ -129,7 +150,7 @@ async function downloadReport() {
     const costPerDay = document.getElementById("costPerDay")?.value;
 
     if (!dateFrom || !dateTo) { alert("Выберите обе даты!"); return; }
-    if (dateFrom > dateTo) { alert("Дата начала не может быть позже даты конца!"); return; }
+    if (new Date(dateFrom) > new Date(dateTo)) { alert("Дата начала не может быть позже даты конца!"); return; }
 
     let url = `/api/get_report?date_in=${dateFrom}&date_out=${dateTo}`;
     if (costPerDay && !isNaN(parseInt(costPerDay))) {
@@ -360,23 +381,17 @@ function clearTable() {
     removeLoadMoreButton();
 }
 
+// ========== ОСНОВНАЯ ФУНКЦИЯ ЗАГРУЗКИ ТАБЛИЦЫ ==========
 async function loadCalendar(reset = true) {
     if (isLoading) return;
     isLoading = true;
     showLoader(true);
 
-    const year = document.getElementById("yearFilter")?.value || new Date().getFullYear();
-    const month = document.getElementById("monthFilter")?.value || (new Date().getMonth() + 1);
-    let fieldId = document.getElementById("fieldFilter")?.value || "";
-    const word = document.getElementById("searchWord")?.value || "";
-
-    if (!fieldId || fieldId === "") {
-        const firstOption = document.querySelector("#fieldFilter option:not([value=''])");
-        if (firstOption) {
-            fieldId = firstOption.value;
-            document.getElementById("fieldFilter").value = fieldId;
-        }
-    }
+    // Используем сохранённые параметры, если reset=false
+    const year    = reset ? (document.getElementById("yearFilter")?.value  || new Date().getFullYear()) : currentYear;
+    const month   = reset ? (document.getElementById("monthFilter")?.value || (new Date().getMonth()+1)) : currentMonth;
+    let fieldId   = reset ? (document.getElementById("fieldFilter")?.value || "") : currentFieldId;
+    const word    = reset ? (document.getElementById("searchWord")?.value  || "") : currentWord;
 
     if (reset) {
         currentOffset = 0;
@@ -457,25 +472,26 @@ function addNewRow() {
     // --- ФИО (с автодополнением) ---
     const nameInput = makeFormInput("ФИО *", "full_name", "text");
     form.appendChild(nameInput.wrapper);
-    setupEmployeeAutocomplete(nameInput, posInputRef => {
-        if (posInputRef && posInputRef.position && posInput.select) {
-            if (POSITION_OPTIONS.includes(posInputRef.position)) {
-                posInput.select.value = posInputRef.position;
-            }
-        }
-        if (posInputRef && posInputRef.gender && genderInput.select) {
-            if (GENDER_OPTIONS.includes(posInputRef.gender)) {
-                genderInput.select.value = posInputRef.gender;
-            }
-        }
-    });
 
+    // --- Должность ---
     const posInput = makeFormSelect("Должность", "position", POSITION_OPTIONS);
     form.appendChild(posInput.wrapper);
 
+    // --- Пол ---
     const genderInput = makeFormSelect("Пол", "gender", GENDER_OPTIONS);
     form.appendChild(genderInput.wrapper);
 
+    // Автодополнение
+    setupEmployeeAutocomplete(nameInput, posInputRef => {
+        if (posInputRef && posInputRef.position && POSITION_OPTIONS.includes(posInputRef.position)) {
+            posInput.select.value = posInputRef.position;
+        }
+        if (posInputRef && posInputRef.gender && GENDER_OPTIONS.includes(posInputRef.gender)) {
+            genderInput.select.value = posInputRef.gender;
+        }
+    });
+
+    // --- Остальные поля ---
     const custInput = makeFormSelectFromList("Заказчик *", "customer_name", customers, "name");
     form.appendChild(custInput.wrapper);
 
@@ -541,7 +557,7 @@ function addNewRow() {
             alert("Укажите даты заезда и выезда!");
             return;
         }
-        if (checkIn > checkOut) {
+        if (new Date(checkIn) > new Date(checkOut)) {
             alert("Дата заезда не может быть позже даты выезда!");
             return;
         }
@@ -798,8 +814,12 @@ function makeFormSelectFromList(label, field, list, nameKey) {
     const select = document.createElement("select");
     select.dataset.field = field;
     select.className = "edit-select";
-    select.innerHTML = `<option value="">— выберите —</option>` +
-        list.map(item => `<option value="${item[nameKey]}">${item[nameKey]}</option>`).join("");
+    let html = `<option value="">— выберите —</option>`;
+    list.forEach(item => {
+        const val = escapeAttr(item[nameKey]);
+        html += `<option value="${val}">${val}</option>`;
+    });
+    select.innerHTML = html;
     wrapper.appendChild(lbl);
     wrapper.appendChild(select);
     return { wrapper, select };
@@ -818,7 +838,7 @@ function makeFormSelectFromListId(label, field, list) {
     select.dataset.field = field;
     select.className = "edit-select";
     select.innerHTML = `<option value="">— выберите —</option>` +
-        list.map(f => `<option value="${f.id}">${f.name}</option>`).join("");
+        list.map(f => `<option value="${f.id}">${escapeAttr(f.name)}</option>`).join("");
     wrapper.appendChild(lbl);
     wrapper.appendChild(select);
     return { wrapper, select };
@@ -829,7 +849,7 @@ async function saveNewResidentRow(data) {
     if (!data.customer_name) { alert("Выберите заказчика!"); return; }
     if (isNaN(data.field_id) || data.field_id <= 0) { alert("Выберите месторождение из списка!"); return; }
     if (!data.check_in || !data.check_out) { alert("Укажите даты!"); return; }
-    if (data.check_in > data.check_out) { alert("Дата заезда не может быть позже даты выезда!"); return; }
+    if (new Date(data.check_in) > new Date(data.check_out)) { alert("Дата заезда не может быть позже даты выезда!"); return; }
     if (!data.add_in_official && !data.eol_fio) { alert("Для гостя укажите ФИО ответственного лица (eol_fio)"); return; }
     if (isNaN(data.room_id) || data.room_id <= 0) { alert("Выберите комнату из списка свободных мест! Нажмите «Найти места», если список пуст."); return; }
 
@@ -867,7 +887,6 @@ async function uploadExcel() {
         if (!response) return;
         const result = await response.json();
         if (response.ok) {
-            // Новый ответ содержит message, approved_formal, approved_guest, rejected_no_room, rows_skipped, errors
             let msg = result.message || "Импорт выполнен";
             if (result.errors && result.errors.length > 0) {
                 msg += "\n\nОшибки:\n" + result.errors.slice(0, 5).join("\n");
@@ -878,10 +897,12 @@ async function uploadExcel() {
             loadCalendar(true);
         } else {
             alert("❌ Ошибка: " + (result.error || result.detail || "Неизвестная ошибка"));
+            fileInput.value = "";
         }
     } catch (err) {
         console.error("Ошибка загрузки:", err);
         alert("Ошибка загрузки: " + err.message);
+        fileInput.value = "";
     }
 }
 
@@ -931,7 +952,7 @@ async function downloadOvertimeReport() {
     const startDate = document.getElementById("overtimeStartDate").value;
     const endDate = document.getElementById("overtimeEndDate").value;
     if (!startDate || !endDate) { alert("Выберите обе даты!"); return; }
-    if (startDate > endDate) { alert("Дата начала не может быть позже даты конца!"); return; }
+    if (new Date(startDate) > new Date(endDate)) { alert("Дата начала не может быть позже даты конца!"); return; }
     const normDays = document.getElementById("normDays").value || 15;
     const fieldName = document.getElementById("overtimeFieldFilter").value;
 
@@ -961,7 +982,13 @@ async function downloadOvertimeReport() {
     }
 }
 
-// ========== ИНИЦИАЛИЗАЦИЯ ==========
+// ========== СТАТИСТИКА (пример, если используется) ==========
+async function loadStats() {
+    // Здесь может быть ваша логика загрузки статистики
+    // (оставлена пустой, так как в исходном коде она не определена)
+}
+
+// ========== ИНИЦИАЛИЗАЦИЯ (исправлена) ==========
 document.addEventListener("DOMContentLoaded", async function () {
     if (window.location.pathname === '/login' || window.location.pathname === '/register') {
         return;
@@ -974,9 +1001,12 @@ document.addEventListener("DOMContentLoaded", async function () {
         const userRes = await apiFetch("/api/current_user");
         if (!userRes) return;
         const currentUser = await userRes.json();
-        const isAdmin = currentUser.role === "admin";
+
+        const isAdmin = currentUser.role === "admin" || currentUser.role === "field_admin";
+        const isSuperAdmin = currentUser.role === "admin";
 
         if (!isAdmin) {
+            // Скрываем административные элементы
             const adminSelectors = [
                 '.cards', '.report-section', '#editModeBtn', '#addResidentBtn', '#excelFile',
                 'button[onclick="uploadExcel()"]', 'a[href="/admin_management"]', 'a[href="/moderate_requests"]',
@@ -1000,7 +1030,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             return;
         }
 
-        // ========== АДМИНИСТРАТОР (внутри try) ==========
+        // ========== АДМИНИСТРАТОР ==========
         await loadFields();
         await loadCustomers();
 
@@ -1015,12 +1045,39 @@ document.addEventListener("DOMContentLoaded", async function () {
             document.getElementById("fieldFilter").value = firstFieldId;
         }
 
+        // Скрываем элементы только для суперадмина
+        if (!isSuperAdmin) {
+            const superAdminSelectors = [
+                'a[href="/admin_management"]',
+                'a[href="/moderate_requests"]',
+                '#excelFile',
+                'button[onclick="uploadExcel()"]'
+            ];
+            superAdminSelectors.forEach(sel => {
+                const el = document.querySelector(sel);
+                if (el) el.style.display = 'none';
+            });
+        }
+
         const addBtn = document.getElementById("addResidentBtn");
         if (addBtn) addBtn.addEventListener("click", addNewRow);
 
-        await loadCalendar(true);
-        await loadOvertimeFields();
+        // ========== ПОДПИСКА НА СОБЫТИЯ ФИЛЬТРОВ ==========
+        // ИСПРАВЛЕНО: все вызывают applyFilters()
+        const monthFilter = document.getElementById("monthFilter");
+        const yearFilterSelect = document.getElementById("yearFilter");
+        const fieldFilterForTable = document.getElementById("fieldFilter");
+        if (monthFilter) monthFilter.addEventListener("change", applyFilters);
+        if (yearFilterSelect) yearFilterSelect.addEventListener("change", applyFilters);
+        if (fieldFilterForTable) fieldFilterForTable.addEventListener("change", applyFilters);
 
+        // Поиск с debounce
+        const searchInput = document.getElementById("searchWord");
+        if (searchInput) {
+            searchInput.addEventListener("input", applyFilters);
+        }
+
+        // ========== ОТЧЁТ ПО ПЕРЕРАБОТКАМ ==========
         const mainLink = document.getElementById("mainMenuLink");
         const overtimeLink = document.getElementById("overtimeReportLink");
         const generateBtn = document.getElementById("generateOvertimeBtn");
@@ -1030,7 +1087,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         if (generateBtn) generateBtn.addEventListener("click", downloadOvertimeReport);
         if (backBtn) backBtn.addEventListener("click", () => toggleMainView(false));
 
-        // Статистика с выбором периода
+        // ========== СТАТИСТИКА ==========
         const nowStats = new Date();
         const firstDayStats = new Date(nowStats.getFullYear(), nowStats.getMonth(), 1).toISOString().slice(0,10);
         const lastDayStats = new Date(nowStats.getFullYear(), nowStats.getMonth() + 1, 0).toISOString().slice(0,10);
@@ -1044,23 +1101,20 @@ document.addEventListener("DOMContentLoaded", async function () {
             updateStatsBtn.addEventListener("click", () => loadStats());
         }
 
-        const fieldFilter = document.getElementById("fieldFilter");
-        if (fieldFilter) {
-            fieldFilter.addEventListener("change", () => loadStats());
+        const fieldFilterStats = document.getElementById("fieldFilter");
+        if (fieldFilterStats) {
+            fieldFilterStats.addEventListener("change", () => loadStats());
         }
 
-        const monthFilter = document.getElementById("monthFilter");
-        const yearFilterSelect = document.getElementById("yearFilter");
-        const fieldFilterForTable = document.getElementById("fieldFilter");
-        if (monthFilter) monthFilter.addEventListener("change", () => loadCalendar(true));
-        if (yearFilterSelect) yearFilterSelect.addEventListener("change", () => loadCalendar(true));
-        if (fieldFilterForTable) fieldFilterForTable.addEventListener("change", () => loadCalendar(true));
+        // ========== ПЕРВИЧНАЯ ЗАГРУЗКА ТАБЛИЦЫ ==========
+        await loadCalendar(true);
+        await loadOvertimeFields();
 
     } catch (err) {
         console.warn("Ошибка инициализации:", err);
     }
 
-    // Переключатель темы (вне try, но может быть и внутри – без разницы)
+    // ========== ТЕМА ==========
     const themeToggleBtn = document.getElementById("themeToggleBtn");
     if (themeToggleBtn) {
         if (localStorage.getItem("theme") === "dark") {

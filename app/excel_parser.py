@@ -15,8 +15,7 @@ logger = logging.getLogger("excel_parser")
 
 CONTRACT_DATE_RE = re.compile(r"(\d{2})\.(\d{2})\.(\d{2,4})")
 
-# Excel (Windows) хранит даты как количество дней от 30.12.1899
-# (с учётом фиктивного 29.02.1900 — отсюда именно эта база, а не 31.12.1899).
+
 _EXCEL_EPOCH = date(1899, 12, 30)
 
 
@@ -176,10 +175,7 @@ def parse_sheet(ws: Worksheet) -> Generator[ParsedRequestRow, None, None]:
     header_row = find_header_row(ws)
 
     if header_row is None:
-        raise ValueError(
-            f"Лист '{ws.title}': не удалось определить строку заголовков "
-            f"(в первых 20 строках не найдена структура заявки)"
-        )
+        return []
 
     header_found = True
 
@@ -207,36 +203,25 @@ def parse_sheet(ws: Worksheet) -> Generator[ParsedRequestRow, None, None]:
         days_raw = row[8].value
 
         # полностью пустая строка
-        if all(
-            cell.value in (None, "")
-            for cell in row[:9]
-        ):
+        days_raw = row[8].value
+
+        # полностью пустая строка
+        if all(cell.value in (None, "") for cell in row[:9]):
             continue
 
-        # служебные строки пропускаем
-        if not full_name:
+        if not full_name or not field_name:
             skipped_empty += 1
             continue
 
-        if not field_name:
-            skipped_empty += 1
-            continue
-
+        # Если даты не распарсились – пропускаем
         if not check_in or not check_out:
-            logger.error(
-                "PARSE_ERROR invalid date: sheet=%s row=%s in=%r out=%r",
-                ws.title, row[0].row, row[6].value, row[7].value
-            )
+            logger.error("PARSE_ERROR invalid date: sheet=%s row=%s", ws.title, row[0].row)
             continue
 
         contract_num, contract_date = _split_contract(contract_raw)
 
         try:
-            days = (
-                int(days_raw)
-                if days_raw not in (None, "")
-                else (check_out - check_in).days
-            )
+            days = int(days_raw) if days_raw not in (None, "") else (check_out - check_in).days
         except Exception:
             days = (check_out - check_in).days
 
@@ -247,12 +232,7 @@ def parse_sheet(ws: Worksheet) -> Generator[ParsedRequestRow, None, None]:
             # после очистки строка оказалась пустой (например, ячейка
             # содержала только NBSP) — пропускаем как служебную
             continue
-        if check_in > check_out:
-            logger.error(
-                "PARSE_ERROR inverted dates: %s row=%s %s > %s",
-                ws.title, row[0].row, check_in, check_out
-            )
-            continue
+        
         actual_days = (check_out - check_in).days
 
         if days != actual_days:

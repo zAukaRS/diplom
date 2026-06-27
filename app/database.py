@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.ext.declarative import declarative_base
 from pathlib import Path
 import os
+from sqlalchemy.orm import declarative_base
 from dotenv import load_dotenv
 
 env_path = Path(__file__).parent.parent / ".env"  # поднимаемся на 2 уровня до D:\diplom

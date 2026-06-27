@@ -46,8 +46,10 @@ async def get_report(
     date_out: date,
     cost_of_day: Optional[int] = 500,
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user)
+    current_user=Depends(get_current_user)
 ):
+    if current_user.role.name not in ("admin", "field_admin"): 
+        raise HTTPException(403)
     if date_in > date_out:
         raise HTTPException(status_code=400, detail="Дата начала не может быть позже даты конца")
 
@@ -102,8 +104,10 @@ async def get_overtime_report(
     db: AsyncSession = Depends(get_db),
     field_name: Optional[str] = None,
     norm_days: Optional[int] = 15,
-    user=Depends(get_current_user)
+    current_user=Depends(get_current_user)
 ):
+    if current_user.role.name not in ("admin", "field_admin"): 
+        raise HTTPException(403)
     if check_in > check_out:
         raise HTTPException(status_code=400, detail="Дата начала не может быть позже даты конца")
 

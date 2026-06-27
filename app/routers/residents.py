@@ -36,18 +36,26 @@ async def get_requests(
         year = current_date_time.year
 
     # Определяем диапазон дат
-    if not date_1 and not date_2:
-        date_start = date(year, month, 1)
-        date_end = date(year, month, days_in_month(year, month))
-    elif not date_1 and date_2:
-        date_start = date(year, month, current_date_time.day)
+    if date_1 and date_2:
+        date_start = date_1
         date_end = date_2
     elif date_1 and not date_2:
         date_start = date_1
-        date_end = date(year, month + 1, current_date_time.day)
-    else:
-        date_start = date_1
+        # последний день месяца date_1
+        next_month = date_1.replace(day=28) + timedelta(days=4)  # переходим на следующий месяц
+        date_end = next_month - timedelta(days=next_month.day)
+    elif not date_1 and date_2:
+        # первый день месяца date_2
+        date_start = date_2.replace(day=1)
         date_end = date_2
+    else: 
+        date_start = date(year, month, 1)
+        # последний день месяца
+        if month == 12:
+            next_month = date(year + 1, 1, 1)
+        else:
+            next_month = date(year, month + 1, 1)
+        date_end = next_month - timedelta(days=1)
 
     # ----- 1. Формальные записи (Request) -----
     query_formal = select(Request).where(
@@ -83,12 +91,10 @@ async def get_requests(
     if word:
         word_lower = word.lower().strip()
         # Формальные
-        query_formal = query_formal.outerjoin(Room, Request.room_id == Room.id)\
+        query_formal = query_formal.outerjoin(Room, Request.room_id == Room.id) \
             .outerjoin(Location, Room.location_id == Location.id)\
             .outerjoin(Customer, Request.customer_id == Customer.id)\
-            .outerjoin(User, Request.user_id == User.id)\
-            .outerjoin(Resident, User.resident_id == Resident.id)\
-            .where(
+            .outerjoin(Resident, Request.resident_id == Resident.id).where(
                 or_(
                     Resident.full_name.ilike(f"%{word_lower}%"),
                     Room.room_number.ilike(f"%{word_lower}%"),
@@ -96,9 +102,9 @@ async def get_requests(
                     Customer.name.ilike(f"%{word_lower}%")
                 )
             )
-        # Гостевые
-        query_guest = query_guest.outerjoin(Room, Request_before.room_id == Room.id)\
-            .outerjoin(Location, Room.location_id == Location.id)\
+        # Гостевые (оставляем как есть, там поле full_name есть в самой таблице)
+        query_guest = query_guest.outerjoin(Room, Request_before.room_id == Room.id) \
+            .outerjoin(Location, Room.location_id == Location.id) \
             .where(
                 or_(
                     Request_before.full_name.ilike(f"%{word_lower}%"),
@@ -145,15 +151,9 @@ async def get_requests(
     for req in requests_guest:
         room = req.room
         location = room.location if room else None
-        user_1 = await db.get(User, req.user_id)
-        if not user_1:
-            full_name = user_1.resident.full_name
-            postition = user_1.resident.position
-            gender = user_1.resident.gender
-        else:
-            full_name = req.full_name
-            postition = req.position
-            gender = req.gender
+        full_name = req.full_name
+        postition = req.position
+        gender = req.gender
         response.append({
             "id": req.id,
             "type": "guest",
