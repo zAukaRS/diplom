@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+
+.git
+
+.idea
+
+.vscode
+
+.pytest_cache
+
+.env
+
+venv/
+
+postgres/backup.sql

@@ -4,8 +4,14 @@ import os
 from sqlalchemy.orm import declarative_base
 from dotenv import load_dotenv
 
-env_path = Path(__file__).parent.parent / ".env"  # поднимаемся на 2 уровня до D:\diplom
-load_dotenv(env_path)
+
+
+
+load_dotenv()
+
+SQLALCHEMY_DATABASE_URL = os.getenv("SQLALCHEMY_DATABASE_URL")
+
+
 SQLALCHEMY_DATABASE_URL = os.getenv("SQLALCHEMY_DATABASE_URL")
 Base = declarative_base()
 

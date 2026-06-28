@@ -1,0 +1,52 @@
+
+
+services:
+
+  postgres:
+    image: postgres:17
+
+    container_name: dormitory_postgres
+
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: dormitory
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d dormitory"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+
+    build: .
+
+    container_name: dormitory_backend
+
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    env_file:
+      - .env.docker
+
+    ports:
+      - "8000:8000"
+
+    volumes:
+      - .:/app
+
+volumes:
+  postgres_data:

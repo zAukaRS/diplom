@@ -1,5 +1,47 @@
-venv/
-.idea/
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Environment variables
 .env
+.env.local
+# Если НЕ хочешь публиковать:
+# .env.docker
+
+# IDE
+.vscode/
+.idea/
+
+# Caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Coverage
+.coverage
+htmlcov/
+
+# Logs
+*.log
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Databases
+*.sqlite3
+
+.env.docker
