@@ -128,7 +128,7 @@ function generateCalendar() {
     const head = document.getElementById("calendarHead");
     if (!head) return;
     let row = "<tr>";
-    row += "<th>Расположение</th><th>Путь</th><th>№ комнаты</th><th>К-во мест</th><th>Пол</th><th>ФИО</th><th>Должность</th><th>Дата заезда</th><th>Дата выезда</th><th>Дней</th><th>Заказчик</th><th>Действия</th>";
+    row += "<th>Расположение</th><th>Путь</th><th>№ комнаты</th><th>Место</th><th>Пол</th><th>ФИО</th><th>Должность</th><th>Дата заезда</th><th>Дата выезда</th><th>Дней</th><th>Заказчик</th><th>Действия</th><th>Состояние</th>";
     row += "</tr>";
     head.innerHTML = row;
 }
@@ -197,11 +197,7 @@ function createResidentRow(r, editModeFlag) {
     if (r.status == 1) row.classList.add("row-repair");
 
     const tdLocation = document.createElement("td");
-    if (editModeFlag) {
-        tdLocation.appendChild(makeStatusSelect(r.status, r.id, r.type));
-    } else {
-        tdLocation.textContent = r.room_location || "";
-    }
+    tdLocation.textContent = r.room_location || "";
     row.appendChild(tdLocation);
 
     const tdPath = document.createElement("td");
@@ -274,8 +270,44 @@ function createResidentRow(r, editModeFlag) {
             }
         };
         tdActions.appendChild(convertBtn);
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.textContent = "🗑 Удалить";
+        deleteBtn.className = "btn-compact";
+        deleteBtn.style.background = "#dc3545";
+        deleteBtn.style.color = "white";
+        deleteBtn.style.marginLeft = "6px";
+        deleteBtn.onclick = async () => {
+            if (!confirm(`Удалить запись "${r.full_name}"? Место в комнате будет освобождено. Действие необратимо.`)) return;
+            try {
+                const resp = await apiFetch("/api/delete_resident", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: r.id, type: r.type })
+                });
+                if (resp && resp.ok) {
+                    row.remove();
+                } else {
+                    const err = resp ? await resp.json().catch(() => ({})) : {};
+                    alert(err.detail || "Ошибка удаления записи");
+                }
+            } catch (err) {
+                console.error("Ошибка удаления:", err);
+                alert("Не удалось удалить запись");
+            }
+        };
+        tdActions.appendChild(deleteBtn);
     }
     row.appendChild(tdActions);
+
+    const tdStatus = document.createElement("td");
+    if (editModeFlag) {
+        tdStatus.appendChild(makeStatusSelect(r.status, r.id, r.type));
+    } else {
+        tdStatus.textContent = r.status == 1 ? "🔧 Ремонт" : "✓ Норма";
+    }
+    row.appendChild(tdStatus);
+
     return row;
 }
 
@@ -874,7 +906,6 @@ async function saveNewResidentRow(data) {
     }
 }
 
-// ========== ЗАГРУЗКА EXCEL ==========
 async function uploadExcel() {
     const fileInput = document.getElementById("excelFile");
     if (!fileInput) { alert("Элемент выбора файла не найден!"); return; }
@@ -905,7 +936,6 @@ async function uploadExcel() {
         fileInput.value = "";
     }
 }
-
 // ========== ОТЧЁТ ПО ПЕРЕРАБОТКАМ ==========
 async function loadOvertimeFields() {
     try {

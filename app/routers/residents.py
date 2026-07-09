@@ -365,7 +365,52 @@ async def update_requests(data: dict = Body(...), db: AsyncSession = Depends(get
         raise HTTPException(status_code=500, detail=str(e))
     
 
+@router.post("/api/delete_resident")
+async def delete_resident(
+    data: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Удаление записи о проживании (админ / field_admin).
 
+    Место в комнате освобождается автоматически: занятость комнат
+    считается динамически как COUNT активных записей Request/Request_before
+    на пересекающийся период (см. compute_available_rooms в requests.py),
+    отдельного поля/таблицы с "занятыми местами" в Room нет — поэтому
+    достаточно удалить саму запись.
+    """
+    if user.role.name not in ("admin", "field_admin"):
+        raise HTTPException(403, "Доступ запрещён")
+
+    record_type = data.get("type", "formal")
+    record_id = data.get("id")
+    if not record_id:
+        raise HTTPException(400, "Не указан id записи")
+
+    try:
+        if record_type == "guest":
+            record = await db.get(Request_before, record_id)
+            if not record:
+                raise HTTPException(404, "Гостевая запись не найдена")
+        else:
+            record = await db.get(Request, record_id)
+            if not record:
+                raise HTTPException(404, "Запись не найдена")
+
+        # field_admin может удалять только записи своего месторождения
+        if user.role.name == "field_admin" and record.field_id != user.field_id:
+            raise HTTPException(403, "Нет прав на удаление записи другого месторождения")
+
+        await db.delete(record)
+        await db.commit()
+        return {"status": "ok", "message": "Запись удалена, место в комнате освобождено"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))@router.get("/api/employees/search")
+    
 @router.get("/api/employees/search")
 async def search_employees(
     q: str,

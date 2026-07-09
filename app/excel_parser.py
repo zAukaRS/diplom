@@ -118,32 +118,46 @@ class ParsedRequestRow:
 
 
 def find_header_row(ws, max_scan_rows=20):
+    """
+    Ищет строку заголовка по фиксированной раскладке колонок:
+
+        A(1) организация
+        B(2) договор
+        C(3) ЕОЛ
+        D(4) № п/п        <- служебная колонка, в парсинге данных не участвует
+        E(5) ФИО
+        F(6) должность
+        G(7) месторождение
+        H(8) заезд
+        I(9) выезд
+        J(10) дни
+    """
     max_row = min(ws.max_row, max_scan_rows)
 
     for row_idx in range(1, max_row):
 
         a = str(ws.cell(row_idx, 1).value or "").lower()
-        d = str(ws.cell(row_idx, 4).value or "").lower()
-        f = str(ws.cell(row_idx, 6).value or "").lower()
+        e = str(ws.cell(row_idx, 5).value or "").lower()
+        g = str(ws.cell(row_idx, 7).value or "").lower()
 
-        g = ws.cell(row_idx + 1, 7).value
         h = ws.cell(row_idx + 1, 8).value
+        i = ws.cell(row_idx + 1, 9).value
 
         score = 0
 
         if "наименование" in a:
             score += 1
 
-        if "фио" in d or "работник" in d:
+        if "фио" in e or "работник" in e:
             score += 1
 
-        if "объект" in f or "месторождение" in f:
-            score += 1
-
-        if _to_date(g):
+        if "объект" in g or "месторождение" in g:
             score += 1
 
         if _to_date(h):
+            score += 1
+
+        if _to_date(i):
             score += 1
 
         if score >= 4:
@@ -164,12 +178,13 @@ def parse_sheet(ws: Worksheet) -> Generator[ParsedRequestRow, None, None]:
         A организация
         B договор
         C ЕОЛ
-        D ФИО
-        E должность
-        F месторождение
-        G заезд
-        H выезд
-        I дни
+        D № п/п        (служебная колонка, пропускается)
+        E ФИО
+        F должность
+        G месторождение
+        H заезд
+        I выезд
+        J дни
     """
 
     header_row = find_header_row(ws)
@@ -193,20 +208,18 @@ def parse_sheet(ws: Worksheet) -> Generator[ParsedRequestRow, None, None]:
         customer_name = row[0].value
         contract_raw = row[1].value
         eol_fio = row[2].value
-        full_name = row[3].value
-        position = row[4].value
-        field_name = row[5].value
+        # row[3] = № п/п — служебная колонка, в данных не используется
+        full_name = row[4].value
+        position = row[5].value
+        field_name = row[6].value
 
-        check_in = _to_date(row[6].value)
-        check_out = _to_date(row[7].value)
+        check_in = _to_date(row[7].value)
+        check_out = _to_date(row[8].value)
 
-        days_raw = row[8].value
-
-        # полностью пустая строка
-        days_raw = row[8].value
+        days_raw = row[9].value
 
         # полностью пустая строка
-        if all(cell.value in (None, "") for cell in row[:9]):
+        if all(cell.value in (None, "") for cell in row[:10]):
             continue
 
         if not full_name or not field_name:

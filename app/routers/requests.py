@@ -7,13 +7,14 @@ from ..models import User, Field, Request, Customer, Resident, Room,Request_befo
 from ..core.dependencies import get_current_user
 from ..utils import generate_contract_number
 from typing import Optional
+
 router = APIRouter(prefix="/api/requests", tags=["requests"])
 from pydantic import BaseModel
 
 class RequestCreate(BaseModel):
     customer: str
     contract_date: date
-    eol_fio: str          # ответственное лицо (может совпадать с full_name)
+    eol_fio: str          
     position: str
     field_id: int
     check_in: date

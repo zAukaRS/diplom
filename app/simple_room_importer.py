@@ -269,6 +269,14 @@ def import_rooms_from_excel(
         if gender_val:
             ctx_gender = gender_val
 
+        # --- Спецпроверка: К-во мест > 10, и при этом в колонке с индексом 18
+        # (0-based, т.е. 19-я колонка листа) стоит число — считаем такую строку
+        # служебной/ошибочной (не реальная комната) и пропускаем её ---
+        extra_col_val = cv_int(row, 18)
+        if ctx_seats is not None and ctx_seats > 10 and extra_col_val is not None:
+            result.skipped_rows += 1
+            continue
+
         # --- Пропускаем строки без места ---
         if seats_val is None and not room_val:
             result.skipped_rows += 1

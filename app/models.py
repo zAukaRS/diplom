@@ -86,7 +86,7 @@ class Request(Base):
 # for manager/admins
     room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
     comment = Column(String, nullable=True)
-    status = Column(String, default="pending")  # pending, approved, rejected
+    status = Column(String, default="approved")  #approved, rejected
     admin_comment = Column(String, nullable=True)
     created_at = Column(
         DateTime(timezone=True),

@@ -22,9 +22,7 @@ DEFAULT_GPNV_CUSTOMER_NAME = "ООО «Газпромнефть-Восток»"
 NO_ROOM_COMMENT = "Нет свободных мест на запрошенный период"
 DUPLICATE_COMMENT = "Пропущено: дубликат уже существующей заявки"
 
-# Статусы заявок, которые считаем активными и учитываем при поиске
-ACTIVE_REQUEST_STATUSES = ("approved", "pending")
-
+ACTIVE_REQUEST_STATUSES = ("approved",)
 
 @dataclass
 class ImportStats:
@@ -33,7 +31,7 @@ class ImportStats:
     rejected_no_room: int = 0
     duplicates_skipped: int = 0         
     rows_skipped: int = 0
-    expired_skipped: int = 0             # заявки с датой в прошлом
+    expired_skipped: int = 0 
     customers_created: list[str] = field(default_factory=list)
     fields_created: list[str] = field(default_factory=list)
     residents_created: list[str] = field(default_factory=list)
@@ -143,7 +141,7 @@ async def _find_existing_requests(
     field_id: int,
 ) -> List[Union[Request, Request_before]]:
     """
-    Находит все активные (approved/pending) заявки для данного ФИО и месторождения
+    Находит все активные (approved заявки для данного ФИО и месторождения
     в обеих таблицах.
     """
     norm_name = normalize_fio(row.full_name)
