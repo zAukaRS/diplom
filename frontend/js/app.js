@@ -1070,10 +1070,6 @@ document.addEventListener("DOMContentLoaded", async function () {
         if (monthEl) monthEl.value = now.getMonth() + 1;
         if (yearEl) yearEl.value = now.getFullYear();
 
-        if (fieldsList.length > 0 && document.getElementById("fieldFilter")) {
-            const firstFieldId = fieldsList[0].id;
-            document.getElementById("fieldFilter").value = firstFieldId;
-        }
 
         // Скрываем элементы только для суперадмина
         if (!isSuperAdmin) {

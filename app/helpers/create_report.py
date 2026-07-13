@@ -52,7 +52,7 @@ def create_report(dict_list: list, output_filename: str, sheet_name='расч.л
 
     headers = [
         'Месторождение', 'Заказчик', 'ФИО проживающего',
-        'Дата заезда', 'Дата выезда', 'Количество дней', 'Расчёт за жильё'
+        'Дата заезда', 'Дата выезда', 'Количество дней', 'Расчёт за жилье'
     ]
     ws.append(headers)
     for cell in ws[1]:
@@ -60,6 +60,7 @@ def create_report(dict_list: list, output_filename: str, sheet_name='расч.л
 
     for row in dict_list:
         days = int(row['Количество дней'])
+        cost = row.get('Расчет за жилье', row.get('Расчёт за жильё', days * 500))
         ws.append([
             row['Месторождение'],
             row['Заказчик'],
@@ -67,7 +68,7 @@ def create_report(dict_list: list, output_filename: str, sheet_name='расч.л
             row['Дата заезда'].strftime("%d.%m.%Y") if isinstance(row['Дата заезда'], date) else row['Дата заезда'],
             row['Дата выезда'].strftime("%d.%m.%Y") if isinstance(row['Дата выезда'], date) else row['Дата выезда'],
             days,
-            days * 500,
+            cost,
         ])
 
     for row in ws.iter_rows(min_row=2):
