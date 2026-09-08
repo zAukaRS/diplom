@@ -68,7 +68,6 @@ async def get_requests(
         selectinload(Request.room).selectinload(Room.location),
         selectinload(Request.room).selectinload(Room.path),
         selectinload(Request.resident)
-        # selectinload(Request.user).selectinload(User.resident)
     )
     if by_field:
         query_formal = query_formal.where(Request.field_id == by_field)
@@ -82,7 +81,6 @@ async def get_requests(
         selectinload(Request_before.field),
         selectinload(Request_before.room).selectinload(Room.location),
         selectinload(Request_before.room).selectinload(Room.path),
-        
     )
     if by_field:
         query_guest = query_guest.where(Request_before.field_id == by_field)
@@ -90,27 +88,27 @@ async def get_requests(
     # Общий поиск по слову – применяем к обоим запросам отдельно
     if word:
         word_lower = word.lower().strip()
-        # Формальные
+        # Формальные – заменяем .ilike() на .like() с func.lower()
         query_formal = query_formal.outerjoin(Room, Request.room_id == Room.id) \
             .outerjoin(Location, Room.location_id == Location.id)\
             .outerjoin(Customer, Request.customer_id == Customer.id)\
             .outerjoin(Resident, Request.resident_id == Resident.id).where(
                 or_(
-                    Resident.full_name.ilike(f"%{word_lower}%"),
-                    Room.room_number.ilike(f"%{word_lower}%"),
-                    Location.name.ilike(f"%{word_lower}%"),
-                    Customer.name.ilike(f"%{word_lower}%")
+                    func.lower(Resident.full_name).like(f"%{word_lower}%"),
+                    func.lower(Room.room_number).like(f"%{word_lower}%"),
+                    func.lower(Location.name).like(f"%{word_lower}%"),
+                    func.lower(Customer.name).like(f"%{word_lower}%")
                 )
             )
-        # Гостевые (оставляем как есть, там поле full_name есть в самой таблице)
+        # Гостевые
         query_guest = query_guest.outerjoin(Room, Request_before.room_id == Room.id) \
             .outerjoin(Location, Room.location_id == Location.id) \
             .where(
                 or_(
-                    Request_before.full_name.ilike(f"%{word_lower}%"),
-                    Room.room_number.ilike(f"%{word_lower}%"),
-                    Location.name.ilike(f"%{word_lower}%"),
-                    Request_before.customer.ilike(f"%{word_lower}%")
+                    func.lower(Request_before.full_name).like(f"%{word_lower}%"),
+                    func.lower(Room.room_number).like(f"%{word_lower}%"),
+                    func.lower(Location.name).like(f"%{word_lower}%"),
+                    func.lower(Request_before.customer).like(f"%{word_lower}%")
                 )
             )
 
@@ -301,8 +299,6 @@ async def add_row(
         return {"id": new_guest.id, "status": new_guest.status}
 
 
-
-
 @router.post("/api/update_resident")
 async def update_requests(data: dict = Body(...), db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
     try:
@@ -409,8 +405,8 @@ async def delete_resident(
         raise
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))@router.get("/api/employees/search")
-    
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/api/employees/search")
 async def search_employees(
     q: str,
@@ -420,8 +416,9 @@ async def search_employees(
 ):
     if len(q) < 2:
         return []
-    pattern = f"%{q}%"
-    query = select(Resident).where(Resident.full_name.ilike(pattern)).limit(limit)
+    pattern = f"%{q.lower()}%"
+    # Заменяем .ilike() на .like() с func.lower()
+    query = select(Resident).where(func.lower(Resident.full_name).like(pattern)).limit(limit)
     result = await db.execute(query)
     employees = result.scalars().all()
     return [

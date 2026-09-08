@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Date, Boolean,DateTime
+from sqlalchemy import Column, Integer, String, ForeignKey, Date, Boolean, DateTime
 import datetime
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -55,7 +55,6 @@ class Request_before(Base):
     admin_comment = Column(String, nullable=True)
     created_at = Column(Date, default=datetime.now(timezone.utc))  
 
-
     user = relationship("User", foreign_keys=[user_id])
     field = relationship("Field")
     room = relationship("Room", foreign_keys=[room_id])
@@ -89,8 +88,8 @@ class Request(Base):
     status = Column(String, default="approved")  #approved, rejected
     admin_comment = Column(String, nullable=True)
     created_at = Column(
-        DateTime(timezone=True),
-        server_default=func.now()
+        DateTime,                  # Убрали timezone=True для совместимости с SQLite
+        server_default=func.now()  # Функция now() в SQLite возвращает текущее время без tz
     )
 
     # Прямая ссылка на жильца (Resident), не зависящая от User.resident_id
@@ -111,8 +110,8 @@ class User(Base):
     username = Column(String, unique=True, nullable=False)
     password = Column(String, nullable=False)
     role_id = Column(Integer, ForeignKey("roles.id"))
-    field_id = Column(Integer, ForeignKey("fields.id"),nullable=True)
-    resident_id =  Column(Integer, ForeignKey("residents.id"))
+    field_id = Column(Integer, ForeignKey("fields.id"), nullable=True)
+    resident_id = Column(Integer, ForeignKey("residents.id"))
 
     role = relationship("Role", back_populates="users")
     field = relationship("Field")
@@ -125,7 +124,6 @@ class Field(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String)
 
-
     rooms = relationship("Room", back_populates="field")
 
 
@@ -134,7 +132,6 @@ class Customer(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String)
-
 
     requests = relationship("Request", back_populates="customer")
 
@@ -154,9 +151,6 @@ class Resident(Base):
     middle_name = Column(String)
     
 
-    
-
-
 class Room(Base):
     __tablename__ = "rooms"
 
@@ -169,13 +163,10 @@ class Room(Base):
     room_unique_id = Column(String)
     status = Column(Integer)
 
-
-
     field = relationship("Field", back_populates="rooms")
     location = relationship("Location", back_populates="rooms")
     path = relationship("Path", back_populates="rooms")
     
-
 
 class Location(Base):
     __tablename__ = "locations"
@@ -191,7 +182,6 @@ class Path(Base):
     description = Column(String, nullable=False)
 
     rooms = relationship("Room", back_populates="path")
-
 
 
 class ContractCounter(Base):

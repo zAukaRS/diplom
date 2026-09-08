@@ -99,7 +99,10 @@ async def _get_or_create_field(db: AsyncSession, name: str, stats: ImportStats) 
 
 async def _get_or_create_customer(db: AsyncSession, name: str, stats: ImportStats) -> Customer:
     name = (name or "—").strip() or "—"
-    res = await db.execute(select(Customer).where(Customer.name.ilike(name)))
+    # Замена ilike на функциональный эквивалент для SQLite
+    res = await db.execute(
+        select(Customer).where(func.lower(Customer.name) == name.lower())
+    )
     customer = res.scalars().first()
     if customer is None:
         customer = Customer(name=name)
